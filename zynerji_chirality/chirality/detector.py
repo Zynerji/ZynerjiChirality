@@ -23,16 +23,21 @@ from zynerji_chirality.core.dual_helix import (
     compute_spectral_coords,
 )
 from zynerji_chirality.core.mol_graph import (
+    apply_axial_perturbation,
     mol_to_adjacency,
     smiles_to_mol3d,
+    smiles_to_mol3d_ensemble,
 )
 from zynerji_chirality.core.chiral_ordering import (
     cip_canonical_order,
+    cip_canonical_order_per_center,
+    find_axial_centers,
     reorder_adjacency,
 )
 from zynerji_chirality.core.spectral_match import build_angular_cost_matrix
 
 from rdkit import Chem
+from rdkit.Chem import rdmolops
 
 
 @dataclass
@@ -77,6 +82,26 @@ class EnantiomerComparison:
         )
 
 
+@dataclass
+class EnsembleResult:
+    """Result of conformer ensemble chirality detection."""
+    smiles: str
+    mean_score: float
+    std_score: float
+    min_score: float
+    max_score: float
+    per_conformer_results: list[ChiralityResult]
+    consensus_is_chiral: bool    # majority vote across conformers
+    n_conformers: int
+
+    def __repr__(self) -> str:
+        label = "CHIRAL" if self.consensus_is_chiral else "ACHIRAL"
+        return (
+            f"EnsembleResult({label}, mean={self.mean_score:.4f}, "
+            f"std={self.std_score:.4f}, n={self.n_conformers})"
+        )
+
+
 class HelixChiralityDetector:
     """Detect molecular chirality via dual-helix spectral asymmetry.
 
@@ -116,6 +141,24 @@ class HelixChiralityDetector:
         else:
             mol = smiles_or_mol
             smiles = Chem.MolToSmiles(mol)
+
+        # 1b. Meso compound check — achiral despite having chiral centers
+        if self._is_meso(mol):
+            adj = mol_to_adjacency(mol, weight_mode="bond_order")
+            ordering = cip_canonical_order(mol, chirality_aware=False)
+            spectral = compute_spectral_coords(
+                reorder_adjacency(adj, ordering), self.params,
+            )
+            return ChiralityResult(
+                smiles=smiles,
+                chirality_score=0.0,
+                chirality_sign=0.0,
+                is_chiral=False,
+                cos_eigenvalues=spectral.eigenvalues_cos,
+                sin_eigenvalues=spectral.eigenvalues_sin,
+                spectral_coords=spectral,
+                confidence=0.0,
+            )
 
         # 2. Build standard adjacency (same for both enantiomers)
         adj = mol_to_adjacency(mol, weight_mode="bond_order")
@@ -160,6 +203,29 @@ class HelixChiralityDetector:
                 spectral_best = spectral_shifted
 
         score = best_score
+
+        # 4b. Axial chirality fallback: if tetrahedral scoring found nothing,
+        # check for atropisomeric (axial) chirality
+        if score <= self.threshold:
+            axial = find_axial_centers(mol)
+            if axial:
+                for direction in (+1.0, -1.0):
+                    adj_axial = apply_axial_perturbation(
+                        adj, mol, axial, direction=direction,
+                    )
+                    adj_axial_ordered = reorder_adjacency(adj_axial, ordering_base)
+                    spectral_axial = compute_spectral_coords(
+                        adj_axial_ordered, self.params,
+                    )
+                    axial_asym, _ = self._compute_asymmetry(
+                        spectral_axial.eigenvalues_cos,
+                        spectral_axial.eigenvalues_sin,
+                    )
+                    axial_diff = abs(axial_asym - baseline_asym)
+                    if axial_diff > score:
+                        score = axial_diff
+                        spectral_best = spectral_axial
+
         is_chiral = score > self.threshold
         confidence = (score / self.threshold - 1.0) if self.threshold > 0 else 0.0
 
@@ -177,6 +243,123 @@ class HelixChiralityDetector:
             sin_eigenvalues=spectral.eigenvalues_sin,
             spectral_coords=spectral,
             confidence=max(confidence, 0.0),
+        )
+
+    def detect_per_center(
+        self,
+        smiles_or_mol: str | Chem.Mol,
+    ) -> dict[int, ChiralityResult]:
+        """Detect chirality independently for each stereocenter.
+
+        Runs the full spectral pipeline with only one center's ordering
+        shift active at a time, isolating each center's contribution.
+
+        Parameters
+        ----------
+        smiles_or_mol : str or Chem.Mol
+            SMILES string or RDKit Mol object.
+
+        Returns
+        -------
+        dict[int, ChiralityResult]
+            Mapping from chiral center atom index to its individual result.
+            Empty dict if no chiral centers.
+        """
+        if isinstance(smiles_or_mol, str):
+            smiles = smiles_or_mol
+            mol = smiles_to_mol3d(smiles)
+        else:
+            mol = smiles_or_mol
+            smiles = Chem.MolToSmiles(mol)
+
+        adj = mol_to_adjacency(mol, weight_mode="bond_order")
+        ordering_base = cip_canonical_order(mol, chirality_aware=False)
+        adj_base = reorder_adjacency(adj, ordering_base)
+        spectral_base = compute_spectral_coords(adj_base, self.params)
+        baseline_asym, _ = self._compute_asymmetry(
+            spectral_base.eigenvalues_cos, spectral_base.eigenvalues_sin,
+        )
+
+        results = {}
+        for shift_dir in (+1, -1):
+            per_center = cip_canonical_order_per_center(
+                mol, shift_override=shift_dir,
+            )
+            for center_idx, ordering in per_center.items():
+                if ordering == ordering_base:
+                    continue
+
+                adj_shifted = reorder_adjacency(adj, ordering)
+                spectral = compute_spectral_coords(adj_shifted, self.params)
+                shifted_asym, _ = self._compute_asymmetry(
+                    spectral.eigenvalues_cos, spectral.eigenvalues_sin,
+                )
+                diff_score = abs(shifted_asym - baseline_asym)
+
+                # Keep best score across shift directions
+                prev = results.get(center_idx)
+                if prev is None or diff_score > prev.chirality_score:
+                    is_chiral = diff_score > self.threshold
+                    confidence = (diff_score / self.threshold - 1.0) if self.threshold > 0 else 0.0
+
+                    Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
+                    centers = Chem.FindMolChiralCenters(mol, includeUnassigned=True)
+                    center_label = dict(centers).get(center_idx, "?")
+                    sign = 1.0 if center_label == "R" else (-1.0 if center_label == "S" else 0.0)
+                    if not is_chiral:
+                        sign = 0.0
+
+                    results[center_idx] = ChiralityResult(
+                        smiles=smiles,
+                        chirality_score=diff_score,
+                        chirality_sign=sign,
+                        is_chiral=is_chiral,
+                        cos_eigenvalues=spectral.eigenvalues_cos,
+                        sin_eigenvalues=spectral.eigenvalues_sin,
+                        spectral_coords=spectral,
+                        confidence=max(confidence, 0.0),
+                    )
+
+        return results
+
+    def detect_ensemble(
+        self,
+        smiles: str,
+        n_conformers: int = 10,
+    ) -> EnsembleResult:
+        """Detect chirality using multiple conformers for robust scoring.
+
+        Generates an ensemble of 3D conformers and runs detection on each,
+        then aggregates. Useful for flexible molecules where a single
+        conformer may not capture the full conformational landscape.
+
+        Parameters
+        ----------
+        smiles : str
+            SMILES string.
+        n_conformers : int
+            Number of conformers to generate and test.
+
+        Returns
+        -------
+        EnsembleResult
+            Aggregated result with per-conformer data.
+        """
+        conformers = smiles_to_mol3d_ensemble(smiles, n_conformers=n_conformers)
+
+        per_conf = [self.detect(mol) for mol in conformers]
+        scores = np.array([r.chirality_score for r in per_conf])
+        n_chiral = sum(1 for r in per_conf if r.is_chiral)
+
+        return EnsembleResult(
+            smiles=smiles,
+            mean_score=float(np.mean(scores)),
+            std_score=float(np.std(scores)),
+            min_score=float(np.min(scores)),
+            max_score=float(np.max(scores)),
+            per_conformer_results=per_conf,
+            consensus_is_chiral=n_chiral > len(per_conf) / 2,
+            n_conformers=len(per_conf),
         )
 
     def compare_enantiomers(
@@ -261,11 +444,40 @@ class HelixChiralityDetector:
         return "R" if result.chirality_sign > 0 else "S"
 
     @staticmethod
+    def _is_meso(mol: Chem.Mol) -> bool:
+        """Check if molecule is a meso compound.
+
+        Meso compounds have chiral centers (R and S) that cancel due to
+        internal symmetry. Detection: equal R/S count + stereo-stripped
+        canonical ranks show R centers are symmetry-equivalent to S centers.
+        """
+        # Get CIP assignments on heavy-atom graph
+        mol_noH = Chem.RemoveHs(mol)
+        Chem.AssignStereochemistry(mol_noH, cleanIt=True, force=True)
+        centers = Chem.FindMolChiralCenters(mol_noH, includeUnassigned=True)
+
+        r_centers = [idx for idx, label in centers if label == "R"]
+        s_centers = [idx for idx, label in centers if label == "S"]
+
+        if len(r_centers) == 0 or len(r_centers) != len(s_centers):
+            return False
+
+        # Strip stereochemistry before ranking — stereo labels cause
+        # otherwise-equivalent atoms to get different ranks
+        mol_clean = Chem.RWMol(mol_noH)
+        Chem.RemoveStereochemistry(mol_clean)
+        ranks = list(Chem.CanonicalRankAtoms(mol_clean.GetMol(), breakTies=False))
+
+        r_ranks = sorted([ranks[idx] for idx in r_centers])
+        s_ranks = sorted([ranks[idx] for idx in s_centers])
+
+        return r_ranks == s_ranks
+
+    @staticmethod
     def _cip_sign(mol: Chem.Mol) -> float:
         """Determine chirality sign from CIP assignments.
 
-        Returns +1.0 for R-dominant, -1.0 for S-dominant, 0.0 if no CIP.
-        For molecules with multiple chiral centers, uses the first center.
+        Returns +1.0 for R-dominant, -1.0 for S-dominant, 0.0 if equal or none.
         """
         Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
         centers = Chem.FindMolChiralCenters(mol, includeUnassigned=True)
@@ -277,9 +489,6 @@ class HelixChiralityDetector:
             return 1.0
         elif s_count > r_count:
             return -1.0
-        elif r_count > 0:
-            # Equal R and S: use the first center
-            return 1.0 if centers[0][1] == "R" else -1.0
         return 0.0
 
     @staticmethod

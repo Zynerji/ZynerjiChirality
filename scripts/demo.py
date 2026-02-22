@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Quick demonstration of ZynerjiChirality.
 
-Shows chirality detection on L/D-alanine and a few drug molecules.
+Shows chirality detection on L/D-alanine and a few drug molecules,
+plus new features: meso detection, per-center analysis, ensemble,
+fingerprint database, and retrosynthetic planning.
 """
 
 from __future__ import annotations
@@ -47,22 +49,37 @@ def main():
     print(f"  Score: {gly_result.chirality_score:.6f}")
     print(f"  Is chiral: {gly_result.is_chiral}")
 
-    # --- 3. Ibuprofen R vs S ---
-    print("\n3. Ibuprofen R vs S")
+    # --- 3. Meso compound detection ---
+    print("\n3. Meso Compound Detection")
     print("-" * 40)
 
-    ibu_r = "CC(C)Cc1ccc([C@H](C)C(=O)O)cc1"
-    ibu_s = "CC(C)Cc1ccc([C@@H](C)C(=O)O)cc1"
+    meso_tartaric = "O[C@H](C(=O)O)[C@@H](O)C(=O)O"
+    meso_result = detector.detect(meso_tartaric)
+    print(f"  meso-Tartaric acid: score={meso_result.chirality_score:.6f}, "
+          f"chiral={meso_result.is_chiral}")
 
-    comp_ibu = detector.compare_enantiomers(ibu_r, ibu_s)
-    print(f"  R-Ibuprofen: score={comp_ibu.result_a.chirality_score:.4f}, "
-          f"sign={comp_ibu.result_a.chirality_sign:+.0f}")
-    print(f"  S-Ibuprofen: score={comp_ibu.result_b.chirality_score:.4f}, "
-          f"sign={comp_ibu.result_b.chirality_sign:+.0f}")
-    print(f"  Are enantiomers: {comp_ibu.are_enantiomers}")
+    # --- 4. Per-center analysis ---
+    print("\n4. Per-Center Chirality Analysis (Isoleucine)")
+    print("-" * 40)
 
-    # --- 4. Fingerprint similarity ---
-    print("\n4. Fingerprint Similarity")
+    isoleucine = "N[C@@H]([C@@H](C)CC)C(=O)O"
+    per_center = detector.detect_per_center(isoleucine)
+    for idx, result in per_center.items():
+        sign_str = {1.0: "R", -1.0: "S", 0.0: "-"}.get(result.chirality_sign, "?")
+        print(f"  Center {idx}: score={result.chirality_score:.4f}, sign={sign_str}")
+
+    # --- 5. Conformer ensemble ---
+    print("\n5. Conformer Ensemble (L-Alanine, 5 conformers)")
+    print("-" * 40)
+
+    ensemble = detector.detect_ensemble(l_ala, n_conformers=5)
+    print(f"  Mean score: {ensemble.mean_score:.4f}")
+    print(f"  Std: {ensemble.std_score:.4f}")
+    print(f"  Range: [{ensemble.min_score:.4f}, {ensemble.max_score:.4f}]")
+    print(f"  Consensus chiral: {ensemble.consensus_is_chiral}")
+
+    # --- 6. Fingerprint similarity ---
+    print("\n6. Fingerprint Similarity")
     print("-" * 40)
 
     fp_l = chirality_fingerprint(l_ala)
@@ -74,10 +91,37 @@ def main():
 
     print(f"  L-Ala vs D-Ala similarity: {sim_ld:.4f}")
     print(f"  L-Ala vs Glycine similarity: {sim_lg:.4f}")
-    print(f"  (Enantiomers should be similar but not identical)")
 
-    # --- 5. Classification ---
-    print("\n5. R/S Classification")
+    # --- 7. Fingerprint Database ---
+    print("\n7. Fingerprint Database")
+    print("-" * 40)
+
+    from zynerji_chirality.db.store import FingerprintStore
+
+    with FingerprintStore(":memory:") as store:
+        store.add(l_ala, fp_l, comp.result_a.chirality_score, comp.result_a.chirality_sign, name="L-Ala")
+        store.add(d_ala, fp_d, comp.result_b.chirality_score, comp.result_b.chirality_sign, name="D-Ala")
+        store.add(glycine, fp_gly, gly_result.chirality_score, gly_result.chirality_sign, name="Glycine")
+        print(f"  Stored {store.count()} molecules")
+
+        results = store.search_similar(fp_l, k=3)
+        print(f"  Top match for L-Ala query: {results[0].name} (sim={results[0].similarity:.4f})")
+
+    # --- 8. Retrosynthetic Planning ---
+    print("\n8. Retrosynthetic Chirality Planning (L-Alanine)")
+    print("-" * 40)
+
+    from zynerji_chirality.reactions.retro import RetroChiralityPlanner
+
+    planner = RetroChiralityPlanner()
+    suggestions = planner.plan(l_ala)
+    for sug in suggestions:
+        print(f"  Center {sug.atom_idx} ({sug.cip_label}): {sug.environment}")
+        for strat in sug.strategies[:2]:
+            print(f"    - {strat}")
+
+    # --- 9. R/S Classification ---
+    print("\n9. R/S Classification")
     print("-" * 40)
 
     for name, smiles in [
@@ -87,23 +131,6 @@ def main():
     ]:
         cls = detector.classify_rs(smiles)
         print(f"  {name}: {cls}")
-
-    # --- 6. Achiral molecules ---
-    print("\n6. Achiral Controls")
-    print("-" * 40)
-
-    achiral = [
-        ("Methane", "C"),
-        ("Benzene", "c1ccccc1"),
-        ("Ethanol", "CCO"),
-    ]
-
-    for name, smiles in achiral:
-        try:
-            res = detector.detect(smiles)
-            print(f"  {name}: score={res.chirality_score:.6f}, chiral={res.is_chiral}")
-        except Exception as e:
-            print(f"  {name}: error — {e}")
 
     print("\n" + "=" * 60)
     print("Demo complete.")

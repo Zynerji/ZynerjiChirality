@@ -24,6 +24,12 @@ from zynerji_chirality.benchmarks.known_molecules import (
     get_achiral,
     get_meso,
 )
+from zynerji_chirality.benchmarks.expanded import (
+    get_sugar_pairs,
+    get_natural_product_pairs,
+    get_steroid_molecules,
+    get_tough_achiral,
+)
 
 
 def run_amino_acid_benchmark(detector: HelixChiralityDetector) -> dict:
@@ -197,6 +203,105 @@ def run_meso_benchmark(detector: HelixChiralityDetector) -> dict:
     return {"n_correct": n_correct, "n_total": n_total}
 
 
+def run_expanded_benchmark(detector: HelixChiralityDetector) -> dict:
+    """Benchmark on expanded molecules: sugars, natural products, steroids."""
+    print("\n" + "=" * 70)
+    print("BENCHMARK 5: Expanded (Sugars, Natural Products, Steroids)")
+    print("=" * 70)
+
+    results = {"sugars": {}, "natural_products": {}, "steroids": {}, "tough_achiral": {}}
+
+    # Sugar D/L pairs
+    print("\n  --- Sugar D/L Pairs ---")
+    sugar_pairs = get_sugar_pairs()
+    n_detected = 0
+    n_opposite = 0
+    for name, d_smiles, l_smiles in sugar_pairs:
+        try:
+            comp = detector.compare_enantiomers(d_smiles, l_smiles)
+            detected = comp.result_a.is_chiral and comp.result_b.is_chiral
+            opposite = comp.signs_opposite
+            if detected:
+                n_detected += 1
+            if opposite:
+                n_opposite += 1
+            status = "OK" if detected and opposite else "FAIL"
+            print(
+                f"  {status:4s} {name:12s} | "
+                f"D: score={comp.result_a.chirality_score:.4f} sign={comp.result_a.chirality_sign:+.0f} | "
+                f"L: score={comp.result_b.chirality_score:.4f} sign={comp.result_b.chirality_sign:+.0f} | "
+                f"opposite={opposite}"
+            )
+        except Exception as e:
+            print(f"  ERR  {name:12s} | {e}")
+    results["sugars"] = {"n_detected": n_detected, "n_total": len(sugar_pairs), "n_opposite": n_opposite}
+
+    # Natural product pairs
+    print("\n  --- Natural Product Pairs ---")
+    np_pairs = get_natural_product_pairs()
+    n_detected = 0
+    n_opposite = 0
+    for name, r_smiles, s_smiles, note in np_pairs:
+        try:
+            comp = detector.compare_enantiomers(r_smiles, s_smiles)
+            detected = comp.result_a.is_chiral and comp.result_b.is_chiral
+            opposite = comp.signs_opposite
+            if detected:
+                n_detected += 1
+            if opposite:
+                n_opposite += 1
+            status = "OK" if detected and opposite else "FAIL"
+            print(
+                f"  {status:4s} {name:12s} | "
+                f"R: score={comp.result_a.chirality_score:.4f} sign={comp.result_a.chirality_sign:+.0f} | "
+                f"S: score={comp.result_b.chirality_score:.4f} sign={comp.result_b.chirality_sign:+.0f} | "
+                f"opp={opposite} | {note[:40]}"
+            )
+        except Exception as e:
+            print(f"  ERR  {name:12s} | {e}")
+    results["natural_products"] = {"n_detected": n_detected, "n_total": len(np_pairs), "n_opposite": n_opposite}
+
+    # Steroids (single molecule chirality)
+    print("\n  --- Steroids ---")
+    steroids = get_steroid_molecules()
+    n_chiral = 0
+    for name, smiles, note in steroids:
+        try:
+            res = detector.detect(smiles)
+            if res.is_chiral:
+                n_chiral += 1
+            status = "OK" if res.is_chiral else "FAIL"
+            print(f"  {status:4s} {name:15s} | score={res.chirality_score:.4f} chiral={res.is_chiral} | {note[:40]}")
+        except Exception as e:
+            print(f"  ERR  {name:15s} | {e}")
+    results["steroids"] = {"n_chiral": n_chiral, "n_total": len(steroids)}
+
+    # Tough achiral controls
+    print("\n  --- Tough Achiral Controls ---")
+    tough = get_tough_achiral()
+    n_correct = 0
+    for name, smiles in tough:
+        try:
+            res = detector.detect(smiles)
+            correct = not res.is_chiral
+            if correct:
+                n_correct += 1
+            status = "OK" if correct else "FAIL"
+            print(f"  {status:4s} {name:15s} | score={res.chirality_score:.6f} achiral={not res.is_chiral}")
+        except Exception as e:
+            print(f"  ERR  {name:15s} | {e}")
+    results["tough_achiral"] = {"n_correct": n_correct, "n_total": len(tough)}
+
+    print(f"\n  Sugars: {results['sugars']['n_detected']}/{results['sugars']['n_total']} detected, "
+          f"{results['sugars']['n_opposite']}/{results['sugars']['n_total']} opposite signs")
+    print(f"  Natural products: {results['natural_products']['n_detected']}/{results['natural_products']['n_total']} detected, "
+          f"{results['natural_products']['n_opposite']}/{results['natural_products']['n_total']} opposite signs")
+    print(f"  Steroids: {results['steroids']['n_chiral']}/{results['steroids']['n_total']} detected chiral")
+    print(f"  Tough achiral: {results['tough_achiral']['n_correct']}/{results['tough_achiral']['n_total']} rejected")
+
+    return results
+
+
 def main():
     print("ZynerjiChirality Benchmark Suite")
     print("Dual-Helix Spectral Chirality Detection")
@@ -212,6 +317,7 @@ def main():
     drug_results = run_drug_benchmark(detector)
     achiral_results = run_achiral_benchmark(detector)
     meso_results = run_meso_benchmark(detector)
+    expanded_results = run_expanded_benchmark(detector)
 
     elapsed = time.time() - t0
 
@@ -226,6 +332,16 @@ def main():
           f"Opposite signs: {drug_results['n_opposite']}/{drug_results['n_total']}")
     print(f"  Achiral     - Rejection: {achiral_results['n_correct']}/{achiral_results['n_total']}")
     print(f"  Meso        - Rejection: {meso_results['n_correct']}/{meso_results['n_total']}")
+    sr = expanded_results["sugars"]
+    npr = expanded_results["natural_products"]
+    ster = expanded_results["steroids"]
+    ta = expanded_results["tough_achiral"]
+    print(f"  Sugars      - Detection: {sr['n_detected']}/{sr['n_total']}, "
+          f"Opposite: {sr['n_opposite']}/{sr['n_total']}")
+    print(f"  Nat. prods  - Detection: {npr['n_detected']}/{npr['n_total']}, "
+          f"Opposite: {npr['n_opposite']}/{npr['n_total']}")
+    print(f"  Steroids    - Chiral: {ster['n_chiral']}/{ster['n_total']}")
+    print(f"  Tough achir - Rejection: {ta['n_correct']}/{ta['n_total']}")
     print(f"\n  Total time: {elapsed:.1f}s")
 
 

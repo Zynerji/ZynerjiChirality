@@ -22,6 +22,21 @@ from zynerji_chirality.core.chiral_ordering import cip_canonical_order, reorder_
 from rdkit import Chem
 
 
+# Projection matrix cache: keyed by (raw_dim, nbits)
+_PROJ_CACHE: dict[tuple[int, int], np.ndarray] = {}
+
+
+def _get_projection_matrix(raw_dim: int, nbits: int) -> np.ndarray:
+    """Get or create a cached random projection matrix."""
+    key = (raw_dim, nbits)
+    if key not in _PROJ_CACHE:
+        rng = np.random.RandomState(42)
+        proj = rng.randn(raw_dim, nbits).astype(np.float64)
+        proj /= np.linalg.norm(proj, axis=0, keepdims=True)
+        _PROJ_CACHE[key] = proj
+    return _PROJ_CACHE[key]
+
+
 def chirality_fingerprint(
     smiles_or_mol: str | Chem.Mol,
     params: HelixParams | None = None,
@@ -104,13 +119,54 @@ def chirality_fingerprint(
         asym_std, asym_chi,         # asymmetry (2k)
     ])
 
-    # Hash to fixed length using random projection (deterministic seed)
-    rng = np.random.RandomState(42)
-    proj = rng.randn(len(raw), nbits).astype(np.float64)
-    proj /= np.linalg.norm(proj, axis=0, keepdims=True)
+    # Hash to fixed length using cached random projection (deterministic seed)
+    proj = _get_projection_matrix(len(raw), nbits)
     fp = raw @ proj
 
     return fp
+
+
+def batch_fingerprint(
+    smiles_list: list[str],
+    params: HelixParams | None = None,
+    nbits: int = 128,
+    n_workers: int = 1,
+) -> list[np.ndarray]:
+    """Compute fingerprints for multiple SMILES in parallel.
+
+    Parameters
+    ----------
+    smiles_list : list[str]
+        List of SMILES strings.
+    params : HelixParams, optional
+        Helix parameters.
+    nbits : int
+        Fingerprint length.
+    n_workers : int
+        Number of parallel workers. Use 1 for serial.
+
+    Returns
+    -------
+    list[np.ndarray]
+        List of fingerprint vectors (None entries for failed molecules).
+    """
+    if params is None:
+        params = HelixParams()
+
+    def _compute_one(smiles: str) -> np.ndarray | None:
+        try:
+            return chirality_fingerprint(smiles, params=params, nbits=nbits)
+        except Exception:
+            return None
+
+    if n_workers <= 1:
+        return [_compute_one(s) for s in smiles_list]
+
+    import multiprocessing
+    ctx = multiprocessing.get_context("spawn")
+    with ctx.Pool(processes=n_workers) as pool:
+        results = pool.map(_compute_one, smiles_list)
+    return results
 
 
 def fingerprint_similarity(fp1: np.ndarray, fp2: np.ndarray) -> float:

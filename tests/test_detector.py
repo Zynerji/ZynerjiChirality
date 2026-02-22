@@ -7,6 +7,7 @@ from zynerji_chirality.chirality.detector import (
     HelixChiralityDetector,
     ChiralityResult,
     EnantiomerComparison,
+    EnsembleResult,
 )
 
 
@@ -111,6 +112,76 @@ class TestClassifyRS:
         # Isoleucine has 2 chiral centers
         cls = detector.classify_rs("N[C@@H]([C@@H](C)CC)C(=O)O")
         assert cls == "multiple_centers"
+
+
+class TestEnsembleDetection:
+    def test_ensemble_chiral(self, detector):
+        """Ensemble on chiral molecule should show consensus chiral."""
+        result = detector.detect_ensemble("N[C@@H](C)C(=O)O", n_conformers=5)
+        assert isinstance(result, EnsembleResult)
+        assert result.consensus_is_chiral
+        assert result.n_conformers == 5
+        assert result.mean_score > 0
+        assert result.std_score >= 0
+        assert len(result.per_conformer_results) == 5
+
+    def test_ensemble_achiral(self, detector):
+        """Ensemble on achiral molecule should show consensus achiral."""
+        result = detector.detect_ensemble("NCC(=O)O", n_conformers=5)
+        assert not result.consensus_is_chiral
+        assert result.mean_score == 0.0
+
+    def test_ensemble_min_max(self, detector):
+        """Min/max scores should be within per-conformer range."""
+        result = detector.detect_ensemble("N[C@@H](C)C(=O)O", n_conformers=5)
+        assert result.min_score <= result.mean_score <= result.max_score
+
+    def test_ensemble_repr(self, detector):
+        result = detector.detect_ensemble("N[C@@H](C)C(=O)O", n_conformers=3)
+        s = repr(result)
+        assert "CHIRAL" in s or "ACHIRAL" in s
+        assert "n=3" in s
+
+
+class TestPerCenterDetection:
+    def test_single_center_matches_global(self, detector):
+        """Single-center molecule: per-center result should match global."""
+        global_res = detector.detect("N[C@@H](C)C(=O)O")
+        per_center = detector.detect_per_center("N[C@@H](C)C(=O)O")
+        assert len(per_center) == 1
+        center_idx = list(per_center.keys())[0]
+        assert per_center[center_idx].is_chiral == global_res.is_chiral
+
+    def test_multi_center_has_multiple_entries(self, detector):
+        """Multi-center molecule should have an entry per center."""
+        # Isoleucine: 2 chiral centers
+        per_center = detector.detect_per_center("N[C@@H]([C@@H](C)CC)C(=O)O")
+        assert len(per_center) >= 2
+
+    def test_achiral_returns_empty(self, detector):
+        """Achiral molecule should return empty dict."""
+        per_center = detector.detect_per_center("NCC(=O)O")
+        assert per_center == {}
+
+
+class TestMesoDetection:
+    def test_meso_tartaric_acid_achiral(self, detector):
+        """Meso-tartaric acid should be detected as achiral."""
+        result = detector.detect("O[C@H](C(=O)O)[C@@H](O)C(=O)O")
+        assert not result.is_chiral
+        assert result.chirality_score == 0.0
+
+    def test_meso_butanediol_achiral(self, detector):
+        """Meso-2,3-butanediol should be detected as achiral."""
+        result = detector.detect("C[C@@H](O)[C@@H](O)C")
+        assert not result.is_chiral
+        assert result.chirality_score == 0.0
+
+    def test_non_meso_multi_center_still_chiral(self, detector):
+        """Multi-center molecules that aren't meso should still be chiral."""
+        # L-Isoleucine has 2 chiral centers (both S), not meso
+        result = detector.detect("N[C@@H]([C@@H](C)CC)C(=O)O")
+        assert result.is_chiral
 
 
 class TestAsymmetryComputation:

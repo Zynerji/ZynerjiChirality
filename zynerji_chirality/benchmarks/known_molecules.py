@@ -29,7 +29,7 @@ ACHIRAL_MOLECULES: list[tuple[str, str]] = [
 # due to internal mirror plane
 MESO_COMPOUNDS: list[tuple[str, str]] = [
     ("meso-Tartaric acid", "O[C@H](C(=O)O)[C@@H](O)C(=O)O"),
-    ("meso-2,3-Butanediol", "C[C@H](O)[C@@H](O)C"),
+    ("meso-2,3-Butanediol", "C[C@@H](O)[C@@H](O)C"),
 ]
 
 # Constitutional isomers: same formula, different connectivity (not enantiomers)
