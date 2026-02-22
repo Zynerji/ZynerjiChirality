@@ -89,7 +89,7 @@ class HelixChiralityDetector:
     def __init__(
         self,
         params: HelixParams | None = None,
-        threshold: float = 0.01,
+        threshold: float = 0.003,
         chiral_weight: float = 0.5,
     ):
         self.params = params or HelixParams()

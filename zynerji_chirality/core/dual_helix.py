@@ -86,12 +86,16 @@ def build_sparse_laplacian(
             delta += np.pi
 
         w = phase_fn(params.omega * delta) * w_orig * coupling
-        if w > 0:
-            rows_out.extend([u, v])
-            cols_out.extend([v, u])
-            vals_out.extend([w, w])
-            degrees[u] += w
-            degrees[v] += w
+        # Keep ALL edges (signed Laplacian): use |w| for degree to
+        # ensure L is positive semi-definite, preserving the sign in
+        # the adjacency. Without this, the sin helix drops most edges
+        # (sin < 0 for monotonic theta), creating disconnected graphs
+        # with degenerate zero eigenvalues.
+        rows_out.extend([u, v])
+        cols_out.extend([v, u])
+        vals_out.extend([w, w])
+        degrees[u] += abs(w)
+        degrees[v] += abs(w)
 
     A_helix = csr_matrix(
         (vals_out, (rows_out, cols_out)), shape=(n, n)

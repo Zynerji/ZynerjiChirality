@@ -27,7 +27,7 @@ detector = HelixChiralityDetector()
 
 # Detect chirality
 result = detector.detect("N[C@@H](C)C(=O)O")  # L-Alanine
-print(result)  # ChiralityResult(CHIRAL, score=0.1590, sign=S, confidence=14.90)
+print(result)  # ChiralityResult(CHIRAL, score=0.1129, sign=S, confidence=36.63)
 
 # Compare enantiomers
 comp = detector.compare_enantiomers(
@@ -43,38 +43,45 @@ print(comp.signs_opposite)   # True
 ### Achiral Rejection: 16/16 (100%)
 All 16 achiral molecules (methane, benzene, ethanol, glycine, etc.) correctly classified with score = 0.
 
-### Amino Acid Detection: 15/19 (79%)
+### Amino Acid Detection: 19/19 (100%)
 | Amino Acid | L score | D score | Opposite Signs |
 |-----------|---------|---------|---------------|
-| Alanine | 0.159 | 0.236 | Yes |
-| Valine | 0.440 | 0.143 | Yes |
-| Leucine | 0.335 | 0.149 | Yes |
-| Isoleucine | 0.137 | 0.709 | Yes |
-| Proline | 0.243 | 0.185 | Yes |
-| Tryptophan | 0.254 | 0.196 | Yes |
-| Methionine | 0.321 | 0.321 | Yes |
-| Serine | 0.129 | 0.559 | Yes |
-| Threonine | 0.190 | 0.459 | Yes |
-| Cysteine | 0.597 | 0.093 | Yes |
-| Asparagine | 0.036 | 0.578 | Yes |
-| Glutamine | 0.069 | 0.420 | Yes |
-| Aspartate | 0.128 | 0.420 | Yes |
-| Glutamate | 0.052 | 0.183 | Yes |
-| Lysine | 0.443 | 0.546 | Yes |
+| Alanine | 0.113 | 0.068 | Yes |
+| Valine | 0.111 | 0.004 | Yes |
+| Leucine | 0.198 | 0.027 | Yes |
+| Isoleucine | 0.208 | 0.144 | Yes |
+| Proline | 0.020 | 0.061 | Yes |
+| Phenylalanine | 0.085 | 0.120 | Yes |
+| Tryptophan | 0.068 | 0.089 | Yes |
+| Methionine | 0.096 | 0.007 | Yes |
+| Serine | 0.016 | 0.219 | Yes |
+| Threonine | 0.074 | 0.225 | Yes |
+| Cysteine | 0.255 | 0.044 | Yes |
+| Tyrosine | 0.005 | 0.110 | Yes |
+| Asparagine | 0.033 | 0.210 | Yes |
+| Glutamine | 0.004 | 0.163 | Yes |
+| Aspartate | 0.079 | 0.245 | Yes |
+| Glutamate | 0.063 | 0.192 | Yes |
+| Lysine | 0.191 | 0.008 | Yes |
+| Arginine | 0.017 | 0.040 | Yes |
+| Histidine | 0.062 | 0.119 | Yes |
 
-### Drug Pair Detection: 7/12 (58%)
+### Drug Pair Detection: 8/12 (67%)
 | Drug | Detected | Opposite Signs |
 |------|----------|---------------|
+| Thalidomide | Yes | Yes |
 | Ibuprofen | Yes | Yes |
-| Propranolol | Yes | Yes |
+| Naproxen | Yes | Yes |
+| Warfarin | Yes | Yes |
 | Methylphenidate | Yes | Yes |
+| Amphetamine | Yes | Yes |
 | Methadone | Yes | Yes |
 | Penicillamine | Yes | Yes |
 
 ### Summary
 - **Achiral rejection**: 100% (zero false positives)
-- **Amino acid chirality detection**: 79%
-- **Drug pair enantiomer discrimination**: 42% with opposite signs
+- **Amino acid chirality detection**: 100% (19/19 with opposite signs)
+- **Drug pair enantiomer discrimination**: 67% with opposite signs
 - **Total benchmark time**: ~2.6s
 
 ## Running Tests
