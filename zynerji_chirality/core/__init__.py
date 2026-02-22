@@ -1,0 +1,1 @@
+"""Core spectral engine components."""
