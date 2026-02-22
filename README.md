@@ -46,43 +46,47 @@ All 16 achiral molecules (methane, benzene, ethanol, glycine, etc.) correctly cl
 ### Amino Acid Detection: 19/19 (100%)
 | Amino Acid | L score | D score | Opposite Signs |
 |-----------|---------|---------|---------------|
-| Alanine | 0.113 | 0.068 | Yes |
-| Valine | 0.111 | 0.004 | Yes |
-| Leucine | 0.198 | 0.027 | Yes |
-| Isoleucine | 0.208 | 0.144 | Yes |
-| Proline | 0.020 | 0.061 | Yes |
-| Phenylalanine | 0.085 | 0.120 | Yes |
-| Tryptophan | 0.068 | 0.089 | Yes |
-| Methionine | 0.096 | 0.007 | Yes |
-| Serine | 0.016 | 0.219 | Yes |
-| Threonine | 0.074 | 0.225 | Yes |
-| Cysteine | 0.255 | 0.044 | Yes |
-| Tyrosine | 0.005 | 0.110 | Yes |
-| Asparagine | 0.033 | 0.210 | Yes |
-| Glutamine | 0.004 | 0.163 | Yes |
-| Aspartate | 0.079 | 0.245 | Yes |
-| Glutamate | 0.063 | 0.192 | Yes |
-| Lysine | 0.191 | 0.008 | Yes |
-| Arginine | 0.017 | 0.040 | Yes |
-| Histidine | 0.062 | 0.119 | Yes |
+| Alanine | 0.113 | 0.113 | Yes |
+| Valine | 0.111 | 0.111 | Yes |
+| Leucine | 0.027 | 0.027 | Yes |
+| Isoleucine | 0.208 | 0.208 | Yes |
+| Proline | 0.061 | 0.061 | Yes |
+| Phenylalanine | 0.120 | 0.067 | Yes |
+| Tryptophan | 0.089 | 0.089 | Yes |
+| Methionine | 0.096 | 0.096 | Yes |
+| Serine | 0.219 | 0.219 | Yes |
+| Threonine | 0.225 | 0.225 | Yes |
+| Cysteine | 0.255 | 0.255 | Yes |
+| Tyrosine | 0.110 | 0.110 | Yes |
+| Asparagine | 0.210 | 0.210 | Yes |
+| Glutamine | 0.163 | 0.163 | Yes |
+| Aspartate | 0.245 | 0.245 | Yes |
+| Glutamate | 0.192 | 0.192 | Yes |
+| Lysine | 0.191 | 0.191 | Yes |
+| Arginine | 0.040 | 0.040 | Yes |
+| Histidine | 0.119 | 0.119 | Yes |
 
-### Drug Pair Detection: 8/12 (67%)
-| Drug | Detected | Opposite Signs |
-|------|----------|---------------|
-| Thalidomide | Yes | Yes |
-| Ibuprofen | Yes | Yes |
-| Naproxen | Yes | Yes |
-| Warfarin | Yes | Yes |
-| Methylphenidate | Yes | Yes |
-| Amphetamine | Yes | Yes |
-| Methadone | Yes | Yes |
-| Penicillamine | Yes | Yes |
+### Drug Pair Detection: 12/12 (100%)
+| Drug | R score | S score | Opposite Signs |
+|------|---------|---------|---------------|
+| Thalidomide | 0.029 | 0.029 | Yes |
+| Ibuprofen | 0.124 | 0.124 | Yes |
+| Naproxen | 0.084 | 0.164 | Yes |
+| Omeprazole | 0.031 | 0.031 | Yes |
+| Ketamine | 0.078 | 0.073 | Yes |
+| Citalopram | 0.044 | 0.044 | Yes |
+| Propranolol | 0.095 | 0.095 | Yes |
+| Warfarin | 0.103 | 0.103 | Yes |
+| Methylphenidate | 0.055 | 0.114 | Yes |
+| Amphetamine | 0.074 | 0.074 | Yes |
+| Methadone | 0.063 | 0.063 | Yes |
+| Penicillamine | 0.173 | 0.173 | Yes |
 
 ### Summary
 - **Achiral rejection**: 100% (zero false positives)
 - **Amino acid chirality detection**: 100% (19/19 with opposite signs)
-- **Drug pair enantiomer discrimination**: 67% with opposite signs
-- **Total benchmark time**: ~2.6s
+- **Drug pair enantiomer discrimination**: 100% (12/12 with opposite signs)
+- **Total benchmark time**: ~3.0s
 
 ## Running Tests
 

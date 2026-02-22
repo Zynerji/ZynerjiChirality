@@ -120,43 +120,53 @@ class HelixChiralityDetector:
         # 2. Build standard adjacency (same for both enantiomers)
         adj = mol_to_adjacency(mol, weight_mode="bond_order")
 
-        # 3. Two orderings: baseline (no chirality) and chiral (R/S encoded)
+        # 3. Baseline ordering (no chirality)
         ordering_base = cip_canonical_order(mol, chirality_aware=False)
-        ordering_chiral = cip_canonical_order(mol, chirality_aware=True)
-
-        # 4. Reorder the SAME adjacency with both orderings
         adj_base = reorder_adjacency(adj, ordering_base)
-        adj_chiral = reorder_adjacency(adj, ordering_chiral)
-
-        # 5. Compute dual-helix spectral coordinates for both orderings
         spectral_base = compute_spectral_coords(adj_base, self.params)
-        spectral_chiral = compute_spectral_coords(adj_chiral, self.params)
 
-        # 6. Compute DIFFERENTIAL asymmetry (chiral ordering vs baseline ordering)
-        # For achiral molecules: both orderings are identical → score = 0
-        # For R: ordering shifts asymmetry in one direction
-        # For S: ordering shifts asymmetry in the opposite direction
         baseline_asym, _ = self._compute_asymmetry(
             spectral_base.eigenvalues_cos, spectral_base.eigenvalues_sin,
         )
-        chiral_asym, _ = self._compute_asymmetry(
-            spectral_chiral.eigenvalues_cos, spectral_chiral.eigenvalues_sin,
-        )
 
-        # 7. Chirality score = magnitude of spectral change from baseline
-        diff = chiral_asym - baseline_asym
-        score = abs(diff)
+        # 4. Bidirectional scoring: try BOTH shift directions (+1 and -1)
+        # and take the max differential. This ensures detection works even
+        # when one shift direction hits a low-sensitivity region of the
+        # phase function (e.g., Propranolol R-shift gives 0.0003 while
+        # S-shift gives 0.095 — same molecule, different sensitivity).
+        # For achiral molecules: both shifts produce the same ordering
+        # as baseline → max differential = 0.
+        best_score = 0.0
+        spectral_best = spectral_base
 
+        for shift_dir in (+1, -1):
+            ordering_shifted = cip_canonical_order(
+                mol, chirality_aware=True, shift_override=shift_dir,
+            )
+            if ordering_shifted == ordering_base:
+                continue  # No chiral centers affected this shift
+
+            adj_shifted = reorder_adjacency(adj, ordering_shifted)
+            spectral_shifted = compute_spectral_coords(adj_shifted, self.params)
+
+            shifted_asym, _ = self._compute_asymmetry(
+                spectral_shifted.eigenvalues_cos,
+                spectral_shifted.eigenvalues_sin,
+            )
+
+            diff_score = abs(shifted_asym - baseline_asym)
+            if diff_score > best_score:
+                best_score = diff_score
+                spectral_best = spectral_shifted
+
+        score = best_score
         is_chiral = score > self.threshold
         confidence = (score / self.threshold - 1.0) if self.threshold > 0 else 0.0
 
-        # 8. R/S sign from CIP assignment (reliable, from RDKit)
-        # The spectral method detects WHETHER a molecule is chiral;
-        # the CIP label from RDKit tells us WHICH chirality.
+        # 5. R/S sign from CIP assignment (reliable, from RDKit)
         sign = self._cip_sign(mol) if is_chiral else 0.0
 
-        # Use the chiral-ordered spectral coords for visualization/fingerprint
-        spectral = spectral_chiral
+        spectral = spectral_best
 
         return ChiralityResult(
             smiles=smiles,

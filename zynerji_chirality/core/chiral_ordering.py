@@ -77,6 +77,7 @@ def signed_tetrahedral_volume(
 def cip_canonical_order(
     mol: Chem.Mol,
     chirality_aware: bool = True,
+    shift_override: int | None = None,
 ) -> list[int]:
     """CIP-priority canonical atom ordering.
 
@@ -89,6 +90,9 @@ def cip_canonical_order(
         chiral centers. R shifts neighbors left, S shifts right (symmetric
         perturbation of equal magnitude). If False, use pure canonical
         ordering identical for enantiomers.
+    shift_override : int or None
+        If not None, force this shift direction (+1 or -1) for ALL chiral
+        centers, ignoring CIP labels. Used for bidirectional scoring.
 
     Returns
     -------
@@ -129,7 +133,21 @@ def cip_canonical_order(
         pos_of[atom_idx] = pos
 
     for center_idx, label in chiral_info:
-        if label not in ("R", "S"):
+        if shift_override is not None:
+            shift = shift_override
+        elif label == "R":
+            shift = 1
+        elif label == "S":
+            shift = -1
+        elif label == "?":
+            # Fallback: use 3D signed tetrahedral volume when CIP is ambiguous
+            try:
+                conf = mol.GetConformer(0)
+                vol = signed_tetrahedral_volume(mol, center_idx, conf)
+                shift = 1 if vol > 0 else -1
+            except Exception:
+                continue
+        else:
             continue
 
         atom = mol.GetAtomWithIdx(center_idx)
@@ -142,8 +160,7 @@ def cip_canonical_order(
         nbr_positions = sorted([pos_of[nb] for nb in neighbors])
         nbr_at_positions = [ordering[p] for p in nbr_positions]
 
-        # Cyclic shift: R = left (+1), S = right (-1)
-        shift = 1 if label == "R" else -1
+        # Cyclic shift
         k = len(nbr_at_positions)
         shifted = [nbr_at_positions[(i + shift) % k] for i in range(k)]
 
