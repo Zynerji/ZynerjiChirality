@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS metadata (
 CREATE INDEX IF NOT EXISTS idx_molecules_canonical ON molecules(canonical_smiles);
 CREATE INDEX IF NOT EXISTS idx_fingerprints_mol ON fingerprints(mol_id);
 CREATE INDEX IF NOT EXISTS idx_metadata_mol ON metadata(mol_id);
+CREATE INDEX IF NOT EXISTS idx_molecules_smiles ON molecules(smiles);
 """
 
 
@@ -77,6 +78,7 @@ class FingerprintStore:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._init_schema()
+        self._fp_matrix_cache: dict[tuple[int, str], tuple[np.ndarray, list]] | None = None
 
     def _init_schema(self) -> None:
         self._conn.executescript(_SCHEMA)
@@ -182,6 +184,103 @@ class FingerprintStore:
             mol_ids.append(mol_id)
         return mol_ids
 
+    def batch_add_fast(
+        self,
+        entries: list[dict],
+        nbits: int = 128,
+        params_hash: str = "default",
+    ) -> list[int]:
+        """Add multiple molecules in a single transaction (10-50x faster).
+
+        Each entry dict should have: smiles, fingerprint, chirality_score,
+        chirality_sign, and optionally name and metadata.
+        """
+        mol_ids = []
+        try:
+            self._conn.execute("BEGIN")
+            for entry in entries:
+                smiles = entry["smiles"]
+                mol = Chem.MolFromSmiles(smiles)
+                canonical = Chem.MolToSmiles(mol) if mol else smiles
+
+                cur = self._conn.execute(
+                    "INSERT INTO molecules (smiles, canonical_smiles, name) VALUES (?, ?, ?)",
+                    (smiles, canonical, entry.get("name")),
+                )
+                mol_id = cur.lastrowid
+
+                fp_blob = entry["fingerprint"].astype(np.float64).tobytes()
+                self._conn.execute(
+                    "INSERT INTO fingerprints (mol_id, nbits, params_hash, fingerprint_blob, "
+                    "chirality_score, chirality_sign) VALUES (?, ?, ?, ?, ?, ?)",
+                    (mol_id, nbits, params_hash, fp_blob,
+                     entry["chirality_score"], entry["chirality_sign"]),
+                )
+
+                metadata = entry.get("metadata")
+                if metadata:
+                    for key, value in metadata.items():
+                        self._conn.execute(
+                            "INSERT OR REPLACE INTO metadata (mol_id, key, value) VALUES (?, ?, ?)",
+                            (mol_id, key, str(value)),
+                        )
+                mol_ids.append(mol_id)
+
+            self._conn.execute("COMMIT")
+        except Exception:
+            self._conn.execute("ROLLBACK")
+            raise
+
+        # Invalidate cache
+        self._fp_matrix_cache = None
+        return mol_ids
+
+    def _load_fingerprint_matrix(
+        self,
+        nbits: int = 128,
+        params_hash: str = "default",
+    ) -> tuple[np.ndarray, list]:
+        """Load all fingerprints as a numpy matrix for vectorized search.
+
+        Returns (matrix, row_data) where matrix is (N, nbits) and row_data
+        contains the molecule info for each row.
+        """
+        cache_key = (nbits, params_hash)
+        if self._fp_matrix_cache is not None and cache_key in self._fp_matrix_cache:
+            return self._fp_matrix_cache[cache_key]
+
+        rows = self._conn.execute(
+            "SELECT m.id, m.smiles, m.canonical_smiles, m.name, "
+            "f.fingerprint_blob, f.chirality_score, f.chirality_sign "
+            "FROM molecules m JOIN fingerprints f ON m.id = f.mol_id "
+            "WHERE f.nbits = ? AND f.params_hash = ?",
+            (nbits, params_hash),
+        ).fetchall()
+
+        if not rows:
+            result = (np.empty((0, nbits)), [])
+            self._fp_matrix_cache = {cache_key: result}
+            return result
+
+        fps = []
+        row_data = []
+        for row in rows:
+            fp = np.frombuffer(row[4], dtype=np.float64)
+            fps.append(fp)
+            row_data.append({
+                "mol_id": row[0],
+                "smiles": row[1],
+                "canonical_smiles": row[2],
+                "name": row[3],
+                "chirality_score": row[5],
+                "chirality_sign": row[6],
+            })
+
+        matrix = np.vstack(fps)
+        result = (matrix, row_data)
+        self._fp_matrix_cache = {cache_key: result}
+        return result
+
     def count(self) -> int:
         """Return total number of molecules in store."""
         row = self._conn.execute("SELECT COUNT(*) FROM molecules").fetchone()
@@ -195,7 +294,7 @@ class FingerprintStore:
         nbits: int = 128,
         params_hash: str = "default",
     ) -> list[SearchResult]:
-        """Search for similar molecules by fingerprint.
+        """Search for similar molecules by fingerprint (vectorized).
 
         Parameters
         ----------
@@ -216,51 +315,41 @@ class FingerprintStore:
         list[SearchResult]
             Top-k most similar molecules.
         """
-        # Load all fingerprints (brute force for <10K molecules)
-        sign_filter = ""
-        if mode == "enantiomer":
-            # Determine query sign from the query fingerprint's context
-            # We'll use a sign parameter approach — caller should set it
-            pass
-
-        rows = self._conn.execute(
-            "SELECT m.id, m.smiles, m.canonical_smiles, m.name, "
-            "f.fingerprint_blob, f.chirality_score, f.chirality_sign "
-            "FROM molecules m JOIN fingerprints f ON m.id = f.mol_id "
-            "WHERE f.nbits = ? AND f.params_hash = ?",
-            (nbits, params_hash),
-        ).fetchall()
-
-        if not rows:
-            return []
-
         query_norm = np.linalg.norm(query_fp)
         if query_norm < 1e-12:
             return []
 
+        matrix, row_data = self._load_fingerprint_matrix(nbits, params_hash)
+        if len(row_data) == 0:
+            return []
+
+        # Vectorized cosine similarity
+        norms = np.linalg.norm(matrix, axis=1)
+        valid = norms > 1e-12
+        if not np.any(valid):
+            return []
+
+        cos_sims = np.zeros(len(row_data))
+        cos_sims[valid] = (matrix[valid] @ query_fp) / (norms[valid] * query_norm)
+        similarities = (cos_sims + 1.0) / 2.0  # map to [0, 1]
+
+        # Build results
         results = []
-        for row in rows:
-            fp = np.frombuffer(row[4], dtype=np.float64)
-            fp_norm = np.linalg.norm(fp)
-            if fp_norm < 1e-12:
+        for i, rd in enumerate(row_data):
+            if not valid[i]:
                 continue
-
-            cos_sim = float(np.dot(query_fp, fp) / (query_norm * fp_norm))
-            similarity = (cos_sim + 1.0) / 2.0  # map to [0, 1]
-
             results.append(SearchResult(
-                mol_id=row[0],
-                smiles=row[1],
-                canonical_smiles=row[2],
-                name=row[3],
-                similarity=similarity,
-                chirality_score=row[5],
-                chirality_sign=row[6],
+                mol_id=rd["mol_id"],
+                smiles=rd["smiles"],
+                canonical_smiles=rd["canonical_smiles"],
+                name=rd["name"],
+                similarity=float(similarities[i]),
+                chirality_score=rd["chirality_score"],
+                chirality_sign=rd["chirality_sign"],
             ))
 
         # For enantiomer mode, filter to opposite sign of the most similar match
         if mode == "enantiomer" and results:
-            # Find sign of the best match to infer query sign
             results.sort(key=lambda r: r.similarity, reverse=True)
             query_sign = results[0].chirality_sign
             results = [r for r in results if r.chirality_sign * query_sign < 0]

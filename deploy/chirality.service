@@ -1,0 +1,15 @@
+[Unit]
+Description=ZynerjiChirality Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=ivhl
+WorkingDirectory=/opt/chirality
+ExecStart=/opt/chirality/venv/bin/python scripts/run_dashboard.py --db /opt/chirality/chembl_work/chembl_screen.db --work-dir /opt/chirality/chembl_work --port 8082 --root-path /chirality
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
