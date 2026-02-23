@@ -38,6 +38,23 @@ logging.basicConfig(
 logger = logging.getLogger("chembl_pipeline")
 
 
+def _cleanup_chembl_cache():
+    """Remove ChEMBL SDF download cache to free disk space.
+
+    The SDF is only needed for Stage 1 discovery. After pairs.json is saved,
+    the ~894MB cache in ~/.data/chembl/ is no longer needed.
+    """
+    import shutil
+    chembl_cache = Path.home() / ".data" / "chembl"
+    if chembl_cache.exists():
+        size_mb = sum(f.stat().st_size for f in chembl_cache.rglob("*") if f.is_file()) / 1e6
+        logger.info("Cleaning up ChEMBL cache: %s (%.0f MB)", chembl_cache, size_mb)
+        shutil.rmtree(chembl_cache)
+        logger.info("Freed %.0f MB", size_mb)
+    else:
+        logger.info("No ChEMBL cache to clean up")
+
+
 def stage_discover(args) -> list:
     """Stage 1: Download ChEMBL and discover enantiomer pairs."""
     from zynerji_chirality.chembl.download import ChEMBLDownloader
@@ -300,6 +317,9 @@ def main():
     logger.info("=== Stage 2: Enrich with bioactivity data ===")
     pair_activities = stage_enrich(args, pairs)
     logger.info("Enriched %d pairs", len(pair_activities))
+
+    # Clean up ChEMBL SDF cache (894MB) — no longer needed after discovery + enrichment
+    _cleanup_chembl_cache()
 
     logger.info("=== Stage 3: Fingerprint pairs ===")
     stage_fingerprint(args, pairs)
