@@ -75,23 +75,74 @@ def stage_discover(args) -> list:
 
 
 def stage_enrich(args, pairs: list) -> list:
-    """Stage 2: Fetch bioactivity data for pairs."""
+    """Stage 2: Fetch bioactivity data for pairs (incremental with checkpoint)."""
     from zynerji_chirality.chembl.activity import ActivityEnricher
 
     enriched_path = Path(args.work_dir) / "enriched_pairs.json"
+    progress_path = Path(args.work_dir) / "enrich_progress.json"
+    chunk_size = getattr(args, 'enrich_chunk_size', 500)
 
-    # Check for existing enrichment
+    # Check for completed enrichment
     if args.resume and enriched_path.exists():
         enricher = ActivityEnricher()
         pair_activities = enricher.load_enriched(str(enriched_path))
-        logger.info("Loaded %d enriched pairs from checkpoint", len(pair_activities))
-        return pair_activities
+        if len(pair_activities) == len(pairs):
+            logger.info("Loaded %d enriched pairs from checkpoint (complete)", len(pair_activities))
+            return pair_activities
+        logger.info("Partial enrichment: %d/%d pairs — resuming", len(pair_activities), len(pairs))
+        start_idx = len(pair_activities)
+    else:
+        pair_activities = []
+        start_idx = 0
 
     enricher = ActivityEnricher()
-    pair_activities = enricher.enrich_pairs(pairs, batch_size=args.batch_size)
+    total = len(pairs)
 
-    # Save checkpoint
-    enricher.save_enriched(pair_activities, str(enriched_path))
+    for chunk_start in range(start_idx, total, chunk_size):
+        chunk_end = min(chunk_start + chunk_size, total)
+        chunk = pairs[chunk_start:chunk_end]
+
+        logger.info(
+            "Enriching chunk %d-%d of %d (%.1f%%)",
+            chunk_start, chunk_end, total,
+            chunk_end / total * 100,
+        )
+
+        chunk_results = enricher.enrich_pairs(chunk, batch_size=args.batch_size)
+        pair_activities.extend(chunk_results)
+
+        # Save incremental checkpoint
+        enricher.save_enriched(pair_activities, str(enriched_path))
+
+        # Write progress for dashboard
+        n_with_data = sum(
+            1 for pa in pair_activities
+            if pa.activities_a or pa.activities_b
+        )
+        n_differential = sum(
+            1 for pa in pair_activities
+            if pa.differential_targets
+        )
+        n_with_gaps = sum(
+            1 for pa in pair_activities
+            if pa.gap_targets_a or pa.gap_targets_b
+        )
+        progress = {
+            "stage": "enrich",
+            "pairs_enriched": len(pair_activities),
+            "pairs_total": total,
+            "pairs_with_activity": n_with_data,
+            "pairs_with_differential": n_differential,
+            "pairs_with_gaps": n_with_gaps,
+            "percent_complete": round(len(pair_activities) / total * 100, 1),
+        }
+        with open(progress_path, "w") as f:
+            json.dump(progress, f)
+
+        logger.info(
+            "Checkpoint saved: %d/%d enriched, %d with activity, %d differential",
+            len(pair_activities), total, n_with_data, n_differential,
+        )
 
     return pair_activities
 

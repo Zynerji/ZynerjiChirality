@@ -26,6 +26,17 @@ Chirality detection via dual-helix spectral graph analysis. Detects whether a mo
 
 **Pipeline**: Download ChEMBL (~2.2M compounds) -> discover enantiomer pairs -> enrich with bioactivity -> fingerprint -> screen for chirality-sensitive drug targets.
 
+**Discovery results** (Stage 1, complete):
+- 235,434 enantiomer/diastereomer pairs (37,172 enantiomers + 198,262 diastereomers)
+- 155,815 unique ChEMBL molecule IDs
+- pairs.json: 470MB, stored at `/opt/chirality/chembl_work/pairs.json`
+
+**Enrichment** (Stage 2, in progress as of 2026-02-22):
+- Incremental: processes 500 pairs/chunk, saves after each chunk
+- Progress tracked in `enrich_progress.json` (dashboard reads this, not the large enriched_pairs.json)
+- Resume support: `--resume` flag picks up from last saved chunk
+- ~500 pairs/min throughput, full run ~7-8 hours
+
 **VM Deployment**: Running on 204.12.163.252 (user: ivhl)
 - Dashboard: http://204.12.163.252/chirality/ (port 8082, nginx reverse proxy)
 - Service: `chirality.service` (systemd, auto-restart)
@@ -35,16 +46,25 @@ Chirality detection via dual-helix spectral graph analysis. Detects whether a mo
 - Pipeline runs in tmux session "chirality": `tmux attach -t chirality`
 - BiCameral services (port 8081) are NOT to be disturbed
 - ZynerjiTrader services were stopped/disabled to free resources
+- **Disk warning**: 8.7G total, ~81% used. Monitor during enrichment (enriched_pairs.json grows)
 
 **Pipeline stages** (scripts/chembl_pipeline.py):
 1. **Discover**: Download ChEMBL SDF via chembl-downloader, filter chiral molecules, group by stereo-stripped SMILES, classify enantiomer/diastereomer pairs
-2. **Enrich**: Fetch bioactivity (IC50, Ki, EC50) via chembl_webresource_client API
+2. **Enrich**: Fetch bioactivity (IC50, Ki, EC50) via chembl_webresource_client API — **incremental with checkpoint** (500 pairs/chunk)
 3. **Fingerprint**: Chirality-aware spectral fingerprints with multiprocessing + batch DB inserts
 4. **Screen**: Activity gaps (one tested, other not), differential activity (>3x fold-change), query similarity
 
 **Dashboard** (FastAPI, dark theme, 15s auto-refresh):
+- Enrichment progress bar in header (gradient, auto-updates)
 - 4 tabs: Screening Hits, Enantiomer Pairs, Differential Activity, Search
 - REST API: /health, /pairs, /hits, /enriched, /stats, /search
+- **Performance**: JSON cache with mtime invalidation, /stats uses lightweight `enrich_progress.json` instead of loading full enriched_pairs.json (was 11.6s, now <40ms)
+- No-cache headers via middleware + nginx (`Cache-Control: no-store`)
+
+**Bugs fixed (2026-02-22)**:
+- Enrichment was non-incremental (all-or-nothing for 155K molecules, ~8hr with no saves)
+- Dashboard /stats loaded 470MB pairs.json + 64MB+ enriched_pairs.json on every 15s refresh (11.6s response → dashboard never updated)
+- Browser aggressively cached dashboard HTML (added no-cache middleware + nginx headers)
 
 ## Architecture
 

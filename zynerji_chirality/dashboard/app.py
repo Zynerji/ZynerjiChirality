@@ -46,14 +46,44 @@ def create_app(
             "pip install zynerji-chirality[dashboard]"
         )
 
+    from starlette.middleware.base import BaseHTTPMiddleware
+
     app = FastAPI(title=title)
     work = Path(work_dir)
     _start_time = time.time()
+
+    class NoCacheMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            response = await call_next(request)
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            return response
+
+    app.add_middleware(NoCacheMiddleware)
+
+    # Cache for expensive JSON loads: {filename: (mtime, data)}
+    _json_cache: dict[str, tuple[float, any]] = {}
 
     def _get_store():
         return FingerprintStore(db_path)
 
     def _load_json(filename: str) -> dict | list | None:
+        path = work / filename
+        if not path.exists():
+            return None
+        try:
+            mtime = path.stat().st_mtime
+            if filename in _json_cache and _json_cache[filename][0] == mtime:
+                return _json_cache[filename][1]
+            with open(path) as f:
+                data = json.load(f)
+            _json_cache[filename] = (mtime, data)
+            return data
+        except Exception:
+            return None
+
+    def _load_json_small(filename: str) -> dict | list | None:
+        """Load small JSON files without caching (progress files, etc.)."""
         path = work / filename
         if path.exists():
             try:
@@ -72,20 +102,33 @@ def create_app(
         except Exception:
             count = 0
 
-        pairs_data = _load_json("pairs.json")
-        enriched_data = _load_json("enriched_pairs.json")
-        hits_data = _load_json("screening_hits.json")
-        fp_ckpt = _load_json("fp_checkpoint.json")
+        # Use lightweight progress files — avoid loading huge JSON on every health check
+        enrich_progress = _load_json_small("enrich_progress.json")
+        fp_ckpt = _load_json_small("fp_checkpoint.json")
+        hits_data = _load_json_small("screening_hits.json")
+
+        # Get pair count from progress or cached pairs
+        pairs_enriched = 0
+        pairs_total = 0
+        if enrich_progress:
+            pairs_enriched = enrich_progress.get("pairs_enriched", 0)
+            pairs_total = enrich_progress.get("pairs_total", 0)
+
+        # Only load pairs.json if we don't have a total from progress
+        if pairs_total == 0:
+            pairs_data = _load_json("pairs.json")
+            pairs_total = len(pairs_data) if pairs_data else 0
 
         return {
             "status": "ok",
             "uptime_seconds": int(time.time() - _start_time),
             "db_path": db_path,
             "molecules_in_store": count,
-            "pairs_discovered": len(pairs_data) if pairs_data else 0,
-            "pairs_enriched": len(enriched_data) if enriched_data else 0,
+            "pairs_discovered": pairs_total,
+            "pairs_enriched": pairs_enriched,
             "screening_hits": len(hits_data) if hits_data else 0,
             "fingerprint_progress": fp_ckpt,
+            "enrich_progress": enrich_progress,
         }
 
     @app.get("/pairs")
@@ -169,9 +212,12 @@ def create_app(
         except Exception:
             count = 0
 
+        # Use cached pairs.json (only reloads when mtime changes)
         pairs_data = _load_json("pairs.json")
-        enriched_data = _load_json("enriched_pairs.json")
-        hits_data = _load_json("screening_hits.json")
+        hits_data = _load_json_small("screening_hits.json")
+
+        # Use lightweight progress file for enrichment stats (not the huge enriched_pairs.json)
+        enrich_progress = _load_json_small("enrich_progress.json")
 
         n_enantiomers = 0
         n_diastereomers = 0
@@ -182,17 +228,14 @@ def create_app(
                 else:
                     n_diastereomers += 1
 
+        # Get enrichment stats from progress file (fast) instead of parsing full JSON
         n_with_activity = 0
         n_with_differential = 0
         n_with_gaps = 0
-        if enriched_data:
-            for e in enriched_data:
-                if e.get("activities_a") or e.get("activities_b"):
-                    n_with_activity += 1
-                if e.get("differential_targets"):
-                    n_with_differential += 1
-                if e.get("gap_targets_a") or e.get("gap_targets_b"):
-                    n_with_gaps += 1
+        if enrich_progress:
+            n_with_activity = enrich_progress.get("pairs_with_activity", 0)
+            n_with_differential = enrich_progress.get("pairs_with_differential", 0)
+            n_with_gaps = enrich_progress.get("pairs_with_gaps", 0)
 
         hit_types = {}
         if hits_data:
@@ -442,6 +485,16 @@ tr:hover td { background: #1a1a28; }
 <body>
 <h1>ZynerjiChirality</h1>
 <div class="subtitle">Enantiomer Screening Pipeline &mdash; <span id="status">loading...</span></div>
+<div id="enrich-bar-wrap" style="margin:10px 0;display:none">
+    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+        <span style="color:#ffaa00">Enrichment</span>
+        <span id="enrich-pct" style="color:#ffaa00">0%</span>
+    </div>
+    <div style="height:10px;background:#1e1e2e;border-radius:5px;overflow:hidden">
+        <div id="enrich-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#ffaa00,#00d4ff);border-radius:5px;transition:width 0.5s"></div>
+    </div>
+    <div id="enrich-detail" style="color:#666;font-size:10px;margin-top:2px"></div>
+</div>
 <div id="refresh-indicator"></div>
 
 <!-- Stats Cards -->
@@ -622,14 +675,30 @@ async function refresh() {
     if (health) {
         document.getElementById('status').textContent = health.status;
         const fp = health.fingerprint_progress;
+        const ep = health.enrich_progress;
         let fpInfo = '';
         if (fp) {
             fpInfo = statRow('FP Progress', `${fp.n_success || 0} done, ${fp.n_fail || 0} fail`, 'val-cyan');
+        }
+        let enrichInfo = '';
+        if (ep && ep.pairs_total > 0) {
+            enrichInfo = statRow('Enrichment', `${(ep.pairs_enriched || 0).toLocaleString()} / ${(ep.pairs_total || 0).toLocaleString()} (${ep.percent_complete || 0}%)`, 'val-orange') +
+                statRow('With Activity', (ep.pairs_with_activity || 0).toLocaleString(), 'val-green') +
+                statRow('Differential', (ep.pairs_with_differential || 0).toLocaleString(), 'val-purple');
+            const wrap = document.getElementById('enrich-bar-wrap');
+            wrap.style.display = 'block';
+            document.getElementById('enrich-fill').style.width = (ep.percent_complete || 0) + '%';
+            document.getElementById('enrich-pct').textContent = (ep.percent_complete || 0) + '%';
+            document.getElementById('enrich-detail').textContent =
+                (ep.pairs_enriched || 0).toLocaleString() + ' / ' + (ep.pairs_total || 0).toLocaleString() +
+                ' pairs | ' + (ep.pairs_with_activity || 0) + ' with activity | ' +
+                (ep.pairs_with_differential || 0) + ' differential';
         }
         document.getElementById('pipeline-stats').innerHTML =
             statRow('Status', health.status, 'val-green') +
             statRow('Uptime', Math.floor(health.uptime_seconds / 60) + ' min') +
             statRow('DB Molecules', health.molecules_in_store.toLocaleString(), 'val-cyan') +
+            enrichInfo +
             fpInfo;
     }
 
