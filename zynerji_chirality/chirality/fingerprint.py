@@ -126,6 +126,15 @@ def chirality_fingerprint(
     return fp
 
 
+def _compute_one_fp(args: tuple) -> np.ndarray | None:
+    """Module-level worker for batch_fingerprint (must be picklable)."""
+    smiles, nbits = args
+    try:
+        return chirality_fingerprint(smiles, nbits=nbits)
+    except Exception:
+        return None
+
+
 def batch_fingerprint(
     smiles_list: list[str],
     params: HelixParams | None = None,
@@ -150,22 +159,13 @@ def batch_fingerprint(
     list[np.ndarray]
         List of fingerprint vectors (None entries for failed molecules).
     """
-    if params is None:
-        params = HelixParams()
-
-    def _compute_one(smiles: str) -> np.ndarray | None:
-        try:
-            return chirality_fingerprint(smiles, params=params, nbits=nbits)
-        except Exception:
-            return None
-
     if n_workers <= 1:
-        return [_compute_one(s) for s in smiles_list]
+        return [_compute_one_fp((s, nbits)) for s in smiles_list]
 
     import multiprocessing
     ctx = multiprocessing.get_context("spawn")
     with ctx.Pool(processes=n_workers) as pool:
-        results = pool.map(_compute_one, smiles_list)
+        results = pool.map(_compute_one_fp, [(s, nbits) for s in smiles_list])
     return results
 
 

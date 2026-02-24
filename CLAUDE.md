@@ -31,11 +31,37 @@ Chirality detection via dual-helix spectral graph analysis. Detects whether a mo
 - 155,815 unique ChEMBL molecule IDs
 - pairs.json: 470MB, stored at `/opt/chirality/chembl_work/pairs.json`
 
-**Enrichment** (Stage 2, in progress as of 2026-02-22):
-- Incremental: processes 500 pairs/chunk, saves after each chunk
-- Progress tracked in `enrich_progress.json` (dashboard reads this, not the large enriched_pairs.json)
-- Resume support: `--resume` flag picks up from last saved chunk
-- ~500 pairs/min throughput, full run ~7-8 hours
+**Enrichment** (Stage 2, COMPLETE):
+- 235,434 pairs processed, 83,801 with activity data, 68,127 with differential activity (>3x fold change on same target)
+- enriched_pairs.json saved at `/opt/chirality/chembl_work/enriched_pairs.json`
+
+**Fingerprinting** (Stage 3, IN PROGRESS as of 2026-02-23 15:21 ET):
+- **Progress**: 11,000 / 155,815 molecules (7.1%), ~2 mol/s, 99.3% success rate (10,921 success, 79 fail)
+- **ETA**: ~20 hours remaining (~Feb 24 ~11:00 ET)
+- Running in tmux session "chirality" with `--resume` (skips completed Stage 1 + 2)
+- Checkpoint: `fp_checkpoint.json` in chembl_work/
+- DB: `chembl_screen.db` (10,965 molecules fingerprinted so far)
+
+**Bugs fixed 2026-02-23** (Stage 3):
+1. **Pickle error**: `batch_fingerprint.<locals>._compute_one` not picklable → moved to module-level `_compute_one_fp`
+2. **99% failure rate**: Large peptides fail ETKDG embedding → added `useRandomCoords=True` fallback in `mol_graph.py`
+3. **Slow fingerprinting**: MMFF optimization on random-coords conformers → skip MMFF when `used_random_coords=True`
+4. **Serial detect bottleneck**: Combined fingerprint + detect into single parallel worker `_detect_and_fingerprint_one`
+5. **Batch size**: Increased from 200 to 1000 for better parallelism
+
+**Files changed**:
+- `zynerji_chirality/chirality/fingerprint.py` — module-level `_compute_one_fp`, tuple args for Pool.map
+- `zynerji_chirality/core/mol_graph.py` — `useRandomCoords=True` fallback, skip MMFF on fallback path
+- `zynerji_chirality/chembl/fingerprinter.py` — combined `_detect_and_fingerprint_one` worker, batch_size=1000
+
+**After Stage 3 completes:**
+1. Stage 4: Screen — activity gaps, differential ranking, generate `screening_report.txt` and `screening_hits.json`
+2. Review results on dashboard and in report files
+
+**What the results mean:**
+- **With activity**: Pairs where at least one enantiomer has bioactivity data (IC50, Ki, EC50) in ChEMBL
+- **Differential**: Both enantiomers tested on same target with >3x potency difference — chirality matters for these drug-target interactions
+- **Novel findings come from Stage 4**: Activity gaps (one tested, other not) + chirality fingerprint analysis to predict which untested enantiomers are worth investigating
 
 **VM Deployment**: Running on 204.12.163.252 (user: ivhl)
 - Dashboard: http://204.12.163.252/chirality/ (port 8082, nginx reverse proxy)
@@ -46,7 +72,7 @@ Chirality detection via dual-helix spectral graph analysis. Detects whether a mo
 - Pipeline runs in tmux session "chirality": `tmux attach -t chirality`
 - BiCameral services (port 8081) are NOT to be disturbed
 - ZynerjiTrader services were stopped/disabled to free resources
-- **Disk warning**: 8.7G total, ~81% used. Monitor during enrichment (enriched_pairs.json grows)
+- **Disk**: 8.7G total, 74% used (2.3G free). Cache cleanup after Stage 2 will free ~894MB.
 
 **Pipeline stages** (scripts/chembl_pipeline.py):
 1. **Discover**: Download ChEMBL SDF via chembl-downloader, filter chiral molecules, group by stereo-stripped SMILES, classify enantiomer/diastereomer pairs
@@ -65,6 +91,13 @@ Chirality detection via dual-helix spectral graph analysis. Detects whether a mo
 - Enrichment was non-incremental (all-or-nothing for 155K molecules, ~8hr with no saves)
 - Dashboard /stats loaded 470MB pairs.json + 64MB+ enriched_pairs.json on every 15s refresh (11.6s response → dashboard never updated)
 - Browser aggressively cached dashboard HTML (added no-cache middleware + nginx headers)
+- Added `_cleanup_chembl_cache()` to pipeline — removes ~/.data/chembl/ (~894MB) after Stage 2 completes
+
+**Session 2026-02-23**:
+- Enrichment completed 100% (83,801 with activity, 68,127 differential)
+- Stage 3 fingerprinting in progress: 11K/155K (7%), ~2 mol/s, 99.3% success rate
+- Fixed pickle bug, 99% failure rate (useRandomCoords fallback), slow MMFF, serial detect
+- Commits pushed: ff35808 (incremental enrichment + dashboard perf), 0c75513 (ChEMBL cache cleanup)
 
 ## Architecture
 

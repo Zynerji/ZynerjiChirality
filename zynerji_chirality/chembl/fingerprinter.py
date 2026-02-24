@@ -2,6 +2,9 @@
 
 Takes discovered EnantiomerPairs, computes chirality-aware fingerprints
 for each molecule, and stores them in the FingerprintStore for similarity search.
+
+Large peptides (SMILES > _MAX_SMILES_LEN chars) are deferred to failed_molecules.jsonl
+for retry on GPU VM with CUDA distance geometry kernel.
 """
 
 from __future__ import annotations
@@ -18,21 +21,34 @@ from zynerji_chirality.db.store import FingerprintStore
 
 logger = logging.getLogger(__name__)
 
+# SMILES longer than this are deferred to GPU retry (ETKDG hangs on large peptides)
+_MAX_SMILES_LEN = 300
+
+
+def _detect_and_fingerprint_one(args: tuple) -> dict | None:
+    """Module-level worker: fingerprint + detect in one shot (picklable)."""
+    smiles, chembl_id, nbits = args
+    try:
+        from zynerji_chirality.chirality.fingerprint import chirality_fingerprint
+        from zynerji_chirality.chirality.detector import HelixChiralityDetector
+        fp = chirality_fingerprint(smiles, nbits=nbits)
+        detector = HelixChiralityDetector()
+        result = detector.detect(smiles)
+        return {
+            "smiles": smiles,
+            "fingerprint": fp,
+            "chirality_score": result.chirality_score,
+            "chirality_sign": result.chirality_sign,
+            "name": chembl_id,
+            "metadata": {"chembl_id": chembl_id or "", "source": "chembl_pipeline"},
+        }
+    except Exception:
+        return {"_failed": True, "smiles": smiles, "chembl_id": chembl_id,
+                "reason": "exception", "smiles_len": len(smiles)}
+
 
 class PairFingerprinter:
-    """Fingerprint enantiomer pairs and store in FingerprintStore.
-
-    Parameters
-    ----------
-    store : FingerprintStore
-        Database to store fingerprints.
-    detector : HelixChiralityDetector
-        Chirality detector for scoring.
-    nbits : int
-        Fingerprint bit length.
-    n_workers : int
-        Number of parallel workers for fingerprint computation.
-    """
+    """Fingerprint enantiomer pairs and store in FingerprintStore."""
 
     def __init__(
         self,
@@ -52,22 +68,7 @@ class PairFingerprinter:
         checkpoint_interval: int = 100,
         checkpoint_path: str | None = None,
     ) -> dict:
-        """Fingerprint all molecules in pairs, store in FingerprintStore.
-
-        Parameters
-        ----------
-        pairs : list[EnantiomerPair]
-            Pairs to fingerprint.
-        checkpoint_interval : int
-            Save checkpoint every N pairs.
-        checkpoint_path : str, optional
-            Path to checkpoint file for resume on failure.
-
-        Returns
-        -------
-        dict
-            Stats with success/fail counts and timing.
-        """
+        """Fingerprint all molecules in pairs, store in FingerprintStore."""
         # Determine resume point
         start_idx = 0
         if checkpoint_path and Path(checkpoint_path).exists():
@@ -88,51 +89,72 @@ class PairFingerprinter:
                         "smiles": mol.canonical_smiles,
                     }
 
+        # Skip molecules already in DB
+        import sqlite3
+        _db = sqlite3.connect(self.store.db_path)
+        existing_smiles = set(r[0] for r in _db.execute("SELECT smiles FROM molecules").fetchall())
+        _db.close()
+        before_skip = len(all_smiles)
+        all_smiles = [s for s in all_smiles if s not in existing_smiles]
+
+        # Separate large peptides (defer to GPU retry)
+        work_dir = Path(checkpoint_path).parent if checkpoint_path else Path(".")
+        failed_log_path = work_dir / "failed_molecules.jsonl"
+
+        cpu_smiles = []
+        n_deferred = 0
+        for smi in all_smiles:
+            if len(smi) > _MAX_SMILES_LEN:
+                n_deferred += 1
+                info = smiles_to_info[smi]
+                with open(failed_log_path, "a") as f:
+                    f.write(json.dumps({
+                        "_failed": True,
+                        "smiles": smi,
+                        "chembl_id": info.get("chembl_id"),
+                        "reason": "deferred_gpu",
+                        "smiles_len": len(smi),
+                    }) + "\n")
+            else:
+                cpu_smiles.append(smi)
+
         logger.info(
-            "Fingerprinting %d unique molecules from %d pairs (workers=%d)",
-            len(all_smiles), len(pairs) - start_idx, self.n_workers,
+            "Fingerprinting %d molecules (workers=%d), skipped %d in DB, deferred %d large to GPU (%s)",
+            len(cpu_smiles), self.n_workers,
+            before_skip - len(all_smiles), n_deferred, failed_log_path,
         )
 
         t0 = time.time()
         n_success = 0
         n_fail = 0
 
-        # Process in batches for checkpointing
-        batch_size = checkpoint_interval * 2  # 2 molecules per pair
-        for batch_start in range(0, len(all_smiles), batch_size):
-            batch_smiles = all_smiles[batch_start:batch_start + batch_size]
+        batch_size = 1000
+        import multiprocessing
+        ctx = multiprocessing.get_context("spawn")
 
-            # Compute fingerprints in parallel
-            fps = batch_fingerprint(
-                batch_smiles,
-                nbits=self.nbits,
-                n_workers=self.n_workers,
-            )
+        for batch_start in range(0, len(cpu_smiles), batch_size):
+            batch_smiles = cpu_smiles[batch_start:batch_start + batch_size]
 
-            # Detect chirality and store
+            work_items = [
+                (smi, smiles_to_info[smi].get("chembl_id"), self.nbits)
+                for smi in batch_smiles
+            ]
+
+            with ctx.Pool(processes=self.n_workers) as pool:
+                results = pool.map(_detect_and_fingerprint_one, work_items)
+
+            # Collect results and log failures
             entries = []
-            for smiles, fp in zip(batch_smiles, fps):
-                if fp is None:
+            for r in results:
+                if r is None:
                     n_fail += 1
-                    continue
-
-                try:
-                    result = self.detector.detect(smiles)
-                    entries.append({
-                        "smiles": smiles,
-                        "fingerprint": fp,
-                        "chirality_score": result.chirality_score,
-                        "chirality_sign": result.chirality_sign,
-                        "name": smiles_to_info[smiles].get("chembl_id"),
-                        "metadata": {
-                            "chembl_id": smiles_to_info[smiles].get("chembl_id", ""),
-                            "source": "chembl_pipeline",
-                        },
-                    })
+                elif r.get("_failed"):
+                    n_fail += 1
+                    with open(failed_log_path, "a") as f:
+                        f.write(json.dumps(r) + "\n")
+                else:
+                    entries.append(r)
                     n_success += 1
-                except Exception as e:
-                    logger.debug("Failed to detect %s: %s", smiles, e)
-                    n_fail += 1
 
             # Batch insert
             if entries:
@@ -143,8 +165,8 @@ class PairFingerprinter:
             elapsed = time.time() - t0
             rate = total_done / max(elapsed, 0.001)
             logger.info(
-                "Progress: %d/%d (%.0f mol/s), success=%d, fail=%d",
-                total_done, len(all_smiles), rate, n_success, n_fail,
+                "Progress: %d/%d (%.0f mol/s), success=%d, fail=%d, deferred=%d",
+                total_done, len(cpu_smiles), rate, n_success, n_fail, n_deferred,
             )
 
             # Save checkpoint
@@ -155,22 +177,24 @@ class PairFingerprinter:
                         "last_completed": pairs_done,
                         "n_success": n_success,
                         "n_fail": n_fail,
+                        "n_deferred": n_deferred,
                         "elapsed": elapsed,
                     }, f)
 
         elapsed = time.time() - t0
         stats = {
             "n_pairs": len(pairs),
-            "n_molecules": len(all_smiles),
+            "n_molecules": len(cpu_smiles),
             "n_success": n_success,
             "n_fail": n_fail,
+            "n_deferred": n_deferred,
             "elapsed_seconds": elapsed,
-            "rate_per_second": len(all_smiles) / max(elapsed, 0.001),
+            "rate_per_second": len(cpu_smiles) / max(elapsed, 0.001),
             "store_count": self.store.count(),
         }
 
         logger.info(
-            "Fingerprinting complete: %d success, %d fail, %.1fs (%.0f mol/s)",
-            n_success, n_fail, elapsed, stats["rate_per_second"],
+            "Fingerprinting complete: %d success, %d fail, %d deferred to GPU, %.1fs (%.0f mol/s)",
+            n_success, n_fail, n_deferred, elapsed, stats["rate_per_second"],
         )
         return stats

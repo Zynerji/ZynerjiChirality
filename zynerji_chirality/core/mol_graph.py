@@ -160,14 +160,25 @@ def smiles_to_mol3d(smiles: str) -> Chem.Mol:
     # ETKDG for 3D conformer generation
     params = AllChem.ETKDGv3()
     params.randomSeed = 42
+    used_random_coords = False
     status = AllChem.EmbedMolecule(mol, params)
     if status == -1:
         # Fallback: try without ETKDG constraints
         status = AllChem.EmbedMolecule(mol, randomSeed=42)
         if status == -1:
-            raise ValueError(f"Cannot embed 3D conformer for: {smiles}")
+            # Fallback 2: useRandomCoords for large/complex molecules
+            params2 = AllChem.ETKDGv3()
+            params2.randomSeed = 42
+            params2.useRandomCoords = True
+            status = AllChem.EmbedMolecule(mol, params2)
+            if status == -1:
+                raise ValueError(f"Cannot embed 3D conformer for: {smiles}")
+            used_random_coords = True
 
-    AllChem.MMFFOptimizeMolecule(mol, maxIters=200)
+    # Skip expensive MMFF for random-coords fallback — bond-order fingerprints
+    # don't need accurate 3D geometry, just valid conformer for CIP assignment
+    if not used_random_coords:
+        AllChem.MMFFOptimizeMolecule(mol, maxIters=200)
 
     # Assign stereochemistry from 3D
     Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
