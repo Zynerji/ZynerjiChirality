@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "zynerji-chirality"
-version = "0.5.0"
+version = "0.6.0"
 description = "Chirality detection via dual-helix spectral graph analysis"
 readme = "README.md"
 license = {text = "MIT"}
@@ -35,8 +35,17 @@ dashboard = [
 ord = [
     "ord-schema>=0.3",
 ]
+targets = [
+    "zynerji-chirality[ml,chembl]",
+]
+admet = [
+    "zynerji-chirality[ml,chembl]",
+]
+generative = [
+    "zynerji-chirality[ml]",
+]
 all = [
-    "zynerji-chirality[ml,chembl,dashboard,ord]",
+    "zynerji-chirality[ml,chembl,dashboard,ord,targets,admet,generative]",
 ]
 
 [tool.pytest.ini_options]

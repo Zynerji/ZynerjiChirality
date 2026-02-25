@@ -402,6 +402,224 @@ def create_app(
             "total_hits": len(hits) if hits else 0,
         }
 
+    # ── Target Models endpoints ─────────────────────────────────────
+
+    @app.get("/targets/status")
+    def targets_status():
+        """Return target models training progress."""
+        targets_work = Path(os.environ.get("TARGETS_WORK_DIR", "targets_work"))
+        report = None
+        report_path = targets_work / "training_report.json"
+        if report_path.exists():
+            try:
+                with open(report_path) as f:
+                    report = json.load(f)
+            except Exception:
+                pass
+        return {
+            "pipeline": "targets",
+            "progress": report,
+            "models_dir": str(targets_work),
+        }
+
+    @app.post("/targets/profile")
+    def targets_profile(request_body: dict = None):
+        """Profile molecule pair for target sensitivity."""
+        if request_body is None:
+            return JSONResponse(status_code=400, content={"error": "Request body required"})
+        smiles_a = request_body.get("smiles_a", "")
+        smiles_b = request_body.get("smiles_b", "")
+        if not smiles_a or not smiles_b:
+            return JSONResponse(status_code=400, content={"error": "smiles_a and smiles_b required"})
+
+        try:
+            from zynerji_chirality.targets.profiler import TargetProfiler
+            targets_work = Path(os.environ.get("TARGETS_WORK_DIR", "targets_work"))
+            profiler = TargetProfiler.load_from_directory(targets_work)
+            profile = profiler.profile(smiles_a, smiles_b)
+            return {
+                "smiles_a": profile.smiles_a,
+                "smiles_b": profile.smiles_b,
+                "n_sensitive": profile.n_sensitive,
+                "top_target": profile.top_target,
+                "top_fold_change": round(profile.top_fold_change, 2),
+                "entries": [
+                    {
+                        "target_id": e.target_chembl_id,
+                        "target_name": e.target_name,
+                        "fold_change": round(e.predicted_fold_change, 2),
+                        "confidence": round(e.confidence, 3),
+                        "source": e.model_source,
+                    }
+                    for e in profile.entries[:50]
+                ],
+            }
+        except Exception as e:
+            return JSONResponse(status_code=400, content={"error": str(e)})
+
+    # ── ADMET endpoints ──────────────────────────────────────────────
+
+    @app.get("/admet/status")
+    def admet_status():
+        """Return ADMET models training progress."""
+        admet_work = Path(os.environ.get("ADMET_WORK_DIR", "admet_work"))
+        report = None
+        report_path = admet_work / "training_report.json"
+        if report_path.exists():
+            try:
+                with open(report_path) as f:
+                    report = json.load(f)
+            except Exception:
+                pass
+        return {
+            "pipeline": "admet",
+            "progress": report,
+            "models_dir": str(admet_work),
+        }
+
+    @app.post("/admet/profile")
+    def admet_profile(request_body: dict = None):
+        """ADMET profile for a molecule."""
+        if request_body is None:
+            return JSONResponse(status_code=400, content={"error": "Request body required"})
+        smiles = request_body.get("smiles", "")
+        if not smiles:
+            return JSONResponse(status_code=400, content={"error": "smiles required"})
+
+        try:
+            from zynerji_chirality.admet.profiler import ADMETProfiler
+            admet_work = Path(os.environ.get("ADMET_WORK_DIR", "admet_work"))
+            profiler = ADMETProfiler.load_from_directory(admet_work)
+            profile = profiler.profile(smiles)
+            return {
+                "smiles": profile.smiles,
+                "overall_risk": profile.overall_risk,
+                "n_high_risk": profile.n_high_risk,
+                "n_moderate_risk": profile.n_moderate_risk,
+                "entries": [
+                    {
+                        "property": e.property_name,
+                        "value": round(e.predicted_value, 3),
+                        "units": e.units,
+                        "risk": e.risk_level,
+                        "confidence": round(e.confidence, 3),
+                    }
+                    for e in profile.entries
+                ],
+            }
+        except Exception as e:
+            return JSONResponse(status_code=400, content={"error": str(e)})
+
+    @app.post("/admet/compare")
+    def admet_compare(request_body: dict = None):
+        """Differential ADMET between enantiomers."""
+        if request_body is None:
+            return JSONResponse(status_code=400, content={"error": "Request body required"})
+        smiles_a = request_body.get("smiles_a", "")
+        smiles_b = request_body.get("smiles_b", "")
+        if not smiles_a or not smiles_b:
+            return JSONResponse(status_code=400, content={"error": "smiles_a and smiles_b required"})
+
+        try:
+            from zynerji_chirality.admet.profiler import ADMETProfiler
+            from zynerji_chirality.admet.differential import DifferentialADMETAnalyzer
+            admet_work = Path(os.environ.get("ADMET_WORK_DIR", "admet_work"))
+            profiler = ADMETProfiler.load_from_directory(admet_work)
+            analyzer = DifferentialADMETAnalyzer(profiler)
+            result = analyzer.analyze(smiles_a, smiles_b)
+            return {
+                "smiles_a": result.smiles_a,
+                "smiles_b": result.smiles_b,
+                "n_divergent": result.n_divergent,
+                "worst_divergence": round(result.worst_divergence, 2),
+                "recommendation": result.recommendation,
+                "entries": [
+                    {
+                        "property": e.property_name,
+                        "value_a": round(e.value_a, 3),
+                        "value_b": round(e.value_b, 3),
+                        "fold_difference": round(e.fold_difference, 2),
+                        "risk_a": e.risk_a,
+                        "risk_b": e.risk_b,
+                        "divergent": e.risk_divergent,
+                    }
+                    for e in result.entries
+                ],
+            }
+        except Exception as e:
+            return JSONResponse(status_code=400, content={"error": str(e)})
+
+    # ── Generative endpoints ─────────────────────────────────────────
+
+    @app.post("/generative/optimize")
+    def generative_optimize(request_body: dict = None):
+        """Stereoisomer optimization."""
+        if request_body is None:
+            return JSONResponse(status_code=400, content={"error": "Request body required"})
+        smiles = request_body.get("smiles", "")
+        if not smiles:
+            return JSONResponse(status_code=400, content={"error": "smiles required"})
+
+        try:
+            from zynerji_chirality.generative.scorer import ChiralityScorer
+            from zynerji_chirality.generative.optimizer import ChiralOptimizer
+
+            scorer = ChiralityScorer()
+            optimizer = ChiralOptimizer(
+                scorer=scorer,
+                max_iterations=request_body.get("max_iterations", 5),
+            )
+            result = optimizer.optimize(smiles)
+            return {
+                "input_smiles": result.input_smiles,
+                "best_smiles": result.best_smiles,
+                "best_score": round(result.best_score, 4),
+                "n_iterations": result.n_iterations,
+                "total_evaluated": result.total_evaluated,
+                "variants": [
+                    {"smiles": s, "score": round(sc, 4)}
+                    for s, sc in sorted(result.all_variants, key=lambda x: -x[1])
+                ],
+            }
+        except Exception as e:
+            return JSONResponse(status_code=400, content={"error": str(e)})
+
+    @app.post("/generative/enumerate")
+    def generative_enumerate(request_body: dict = None):
+        """Enumerate and score stereoisomers."""
+        if request_body is None:
+            return JSONResponse(status_code=400, content={"error": "Request body required"})
+        smiles = request_body.get("smiles", "")
+        if not smiles:
+            return JSONResponse(status_code=400, content={"error": "smiles required"})
+
+        try:
+            from zynerji_chirality.generative.enumerator import StereoisomerEnumerator
+            from zynerji_chirality.generative.scorer import ChiralityScorer
+
+            enum = StereoisomerEnumerator(compute_fingerprints=False)
+            variants = enum.enumerate(smiles)
+
+            scorer = ChiralityScorer()
+            ranked = scorer.rank_stereoisomers(variants)
+
+            return {
+                "input_smiles": smiles,
+                "n_variants": len(ranked),
+                "variants": [
+                    {
+                        "smiles": v.canonical_smiles,
+                        "n_centers": v.n_centers,
+                        "is_original": v.is_original,
+                        "configuration": {str(k): lab for k, lab in v.configuration.items()},
+                        "score": round(sc.combined_score, 4),
+                    }
+                    for v, sc in ranked
+                ],
+            }
+        except Exception as e:
+            return JSONResponse(status_code=400, content={"error": str(e)})
+
     @app.get("/", response_class=HTMLResponse)
     def dashboard():
         return DASHBOARD_HTML
@@ -646,6 +864,9 @@ tr:hover td { background: #1a1a28; }
     <button class="tab" onclick="switchTab('catalysts')">Catalysts</button>
     <button class="tab" onclick="switchTab('cod')">COD Pipeline</button>
     <button class="tab" onclick="switchTab('ord')">ORD Pipeline</button>
+    <button class="tab" onclick="switchTab('targets')">Target Models</button>
+    <button class="tab" onclick="switchTab('admet')">ADMET</button>
+    <button class="tab" onclick="switchTab('generative')">Generative</button>
 </div>
 
 <!-- Tab Content: Hits -->
@@ -771,6 +992,61 @@ tr:hover td { background: #1a1a28; }
     <div class="card" id="cat-results" style="display:none">
         <div class="card-title">Enantioselectivity Prediction</div>
         <div id="cat-results-body"></div>
+    </div>
+</div>
+
+<!-- Tab Content: Target Models -->
+<div class="tab-content" id="tab-targets">
+    <div class="search-box">
+        <input type="text" id="tgt-smiles-a" placeholder="Enantiomer A SMILES" style="flex:1" />
+        <input type="text" id="tgt-smiles-b" placeholder="Enantiomer B SMILES" style="flex:1" />
+        <button onclick="doTargetProfile()">Profile Targets</button>
+    </div>
+    <div class="card">
+        <div class="card-title">Target Models Status</div>
+        <div id="targets-status"><div style="color:#888">Loading...</div></div>
+    </div>
+    <div class="card" id="tgt-results" style="display:none;margin-top:12px">
+        <div class="card-title">Target Sensitivity Profile</div>
+        <div id="tgt-results-body"></div>
+    </div>
+</div>
+
+<!-- Tab Content: ADMET -->
+<div class="tab-content" id="tab-admet">
+    <div class="search-box">
+        <input type="text" id="admet-smiles" placeholder="SMILES for ADMET profile" style="flex:2" />
+        <button onclick="doADMETProfile()">Profile</button>
+    </div>
+    <div class="search-box">
+        <input type="text" id="admet-a" placeholder="Enantiomer A SMILES" style="flex:1" />
+        <input type="text" id="admet-b" placeholder="Enantiomer B SMILES" style="flex:1" />
+        <button onclick="doADMETCompare()">Compare</button>
+    </div>
+    <div class="card">
+        <div class="card-title">ADMET Models Status</div>
+        <div id="admet-status"><div style="color:#888">Loading...</div></div>
+    </div>
+    <div class="card" id="admet-results" style="display:none;margin-top:12px">
+        <div class="card-title">ADMET Profile</div>
+        <div id="admet-results-body"></div>
+    </div>
+    <div class="card" id="admet-compare-results" style="display:none;margin-top:12px">
+        <div class="card-title">Differential ADMET</div>
+        <div id="admet-compare-body"></div>
+    </div>
+</div>
+
+<!-- Tab Content: Generative -->
+<div class="tab-content" id="tab-generative">
+    <div class="search-box">
+        <input type="text" id="gen-smiles" placeholder="SMILES to optimize" style="flex:2" />
+        <button onclick="doOptimize()">Optimize</button>
+        <button onclick="doEnumerate()">Enumerate</button>
+    </div>
+    <div class="card" id="gen-results" style="display:none">
+        <div class="card-title">Optimization / Enumeration Results</div>
+        <div id="gen-results-body"></div>
     </div>
 </div>
 
@@ -1082,10 +1358,188 @@ async function refreshORD() {
     body.innerHTML = html || '<div style="color:#888">Processing...</div>';
 }
 
+async function doTargetProfile() {
+    const a = document.getElementById('tgt-smiles-a').value.trim();
+    const b = document.getElementById('tgt-smiles-b').value.trim();
+    if (!a || !b) return;
+    const card = document.getElementById('tgt-results');
+    const body = document.getElementById('tgt-results-body');
+    body.innerHTML = '<div style="color:#888">Profiling...</div>';
+    card.style.display = 'block';
+    try {
+        const r = await fetch(BASE + '/targets/profile', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({smiles_a: a, smiles_b: b})
+        });
+        const data = await r.json();
+        if (data.error) { body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`; return; }
+        let html = statRow('Sensitive Targets', data.n_sensitive, 'val-green') +
+            statRow('Top Target', data.top_target || '-', 'val-cyan') +
+            statRow('Top Fold Change', (data.top_fold_change || 0).toFixed(1) + 'x', 'val-orange');
+        if (data.entries && data.entries.length > 0) {
+            html += '<table style="margin-top:8px"><thead><tr><th>Target</th><th>Name</th><th>Fold</th><th>Conf</th><th>Source</th></tr></thead><tbody>';
+            data.entries.forEach(e => {
+                const fc = e.fold_change >= 3 ? 'val-orange' : '';
+                html += `<tr><td>${e.target_id}</td><td>${e.target_name||'-'}</td><td class="${fc}">${e.fold_change.toFixed(1)}x</td><td>${e.confidence.toFixed(3)}</td><td>${e.source}</td></tr>`;
+            });
+            html += '</tbody></table>';
+        }
+        body.innerHTML = html;
+    } catch(e) { body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`; }
+}
+
+async function refreshTargets() {
+    const data = await fetchJSON('/targets/status');
+    const body = document.getElementById('targets-status');
+    if (!data || !data.progress) { body.innerHTML = '<div style="color:#888">No target models trained yet. Run: python scripts/train_target_models.py</div>'; return; }
+    const p = data.progress;
+    body.innerHTML = statRow('Targets Trained', p.n_targets_trained || 0, 'val-green') +
+        statRow('Targets Skipped', p.n_targets_skipped || 0) +
+        statRow('Total Records', p.total_records || 0, 'val-cyan') +
+        statRow('Elapsed', (p.elapsed_seconds || 0).toFixed(1) + 's');
+}
+
+async function doADMETProfile() {
+    const smiles = document.getElementById('admet-smiles').value.trim();
+    if (!smiles) return;
+    const card = document.getElementById('admet-results');
+    const body = document.getElementById('admet-results-body');
+    body.innerHTML = '<div style="color:#888">Profiling...</div>';
+    card.style.display = 'block';
+    try {
+        const r = await fetch(BASE + '/admet/profile', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({smiles})
+        });
+        const data = await r.json();
+        if (data.error) { body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`; return; }
+        const riskColor = data.overall_risk === 'high_risk' ? 'val-red' : data.overall_risk === 'moderate_risk' ? 'val-orange' : 'val-green';
+        let html = statRow('Overall Risk', data.overall_risk, riskColor) +
+            statRow('High Risk', data.n_high_risk, 'val-red') +
+            statRow('Moderate Risk', data.n_moderate_risk, 'val-orange');
+        if (data.entries && data.entries.length > 0) {
+            html += '<table style="margin-top:8px"><thead><tr><th>Property</th><th>Value</th><th>Units</th><th>Risk</th></tr></thead><tbody>';
+            data.entries.forEach(e => {
+                const rc = e.risk === 'high_risk' ? 'val-red' : e.risk === 'moderate_risk' ? 'val-orange' : 'val-green';
+                html += `<tr><td>${e.property}</td><td>${e.value.toFixed(3)}</td><td>${e.units}</td><td class="${rc}">${e.risk}</td></tr>`;
+            });
+            html += '</tbody></table>';
+        }
+        body.innerHTML = html;
+    } catch(e) { body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`; }
+}
+
+async function doADMETCompare() {
+    const a = document.getElementById('admet-a').value.trim();
+    const b = document.getElementById('admet-b').value.trim();
+    if (!a || !b) return;
+    const card = document.getElementById('admet-compare-results');
+    const body = document.getElementById('admet-compare-body');
+    body.innerHTML = '<div style="color:#888">Comparing...</div>';
+    card.style.display = 'block';
+    try {
+        const r = await fetch(BASE + '/admet/compare', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({smiles_a: a, smiles_b: b})
+        });
+        const data = await r.json();
+        if (data.error) { body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`; return; }
+        const recColor = data.recommendation === 'chirality_matters' ? 'val-orange' : 'val-green';
+        let html = statRow('Recommendation', data.recommendation, recColor) +
+            statRow('Divergent Properties', data.n_divergent, 'val-orange') +
+            statRow('Worst Divergence', (data.worst_divergence || 0).toFixed(1) + 'x');
+        if (data.entries && data.entries.length > 0) {
+            html += '<table style="margin-top:8px"><thead><tr><th>Property</th><th>Value A</th><th>Value B</th><th>Fold</th><th>Risk A</th><th>Risk B</th></tr></thead><tbody>';
+            data.entries.forEach(e => {
+                const div = e.divergent ? 'val-orange' : '';
+                html += `<tr><td>${e.property}</td><td>${e.value_a.toFixed(3)}</td><td>${e.value_b.toFixed(3)}</td><td class="${div}">${e.fold_difference.toFixed(1)}x</td><td>${e.risk_a}</td><td>${e.risk_b}</td></tr>`;
+            });
+            html += '</tbody></table>';
+        }
+        body.innerHTML = html;
+    } catch(e) { body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`; }
+}
+
+async function refreshADMET() {
+    const data = await fetchJSON('/admet/status');
+    const body = document.getElementById('admet-status');
+    if (!data || !data.progress) { body.innerHTML = '<div style="color:#888">No ADMET models trained yet. Run: python scripts/train_admet_models.py</div>'; return; }
+    const p = data.progress;
+    body.innerHTML = statRow('Properties Trained', p.n_properties_trained || 0, 'val-green') +
+        statRow('Total Properties', p.total_properties || 0) +
+        statRow('Elapsed', (p.elapsed_seconds || 0).toFixed(1) + 's');
+}
+
+async function doOptimize() {
+    const smiles = document.getElementById('gen-smiles').value.trim();
+    if (!smiles) return;
+    const card = document.getElementById('gen-results');
+    const body = document.getElementById('gen-results-body');
+    body.innerHTML = '<div style="color:#888">Optimizing...</div>';
+    card.style.display = 'block';
+    try {
+        const r = await fetch(BASE + '/generative/optimize', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({smiles})
+        });
+        const data = await r.json();
+        if (data.error) { body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`; return; }
+        let html = statRow('Input', data.input_smiles) +
+            statRow('Best', data.best_smiles, 'val-green') +
+            statRow('Score', data.best_score.toFixed(4), 'val-cyan') +
+            statRow('Iterations', data.n_iterations) +
+            statRow('Evaluated', data.total_evaluated);
+        if (data.variants && data.variants.length > 0) {
+            html += '<table style="margin-top:8px"><thead><tr><th>Rank</th><th>SMILES</th><th>Score</th></tr></thead><tbody>';
+            data.variants.forEach((v, i) => {
+                const best = v.smiles === data.best_smiles ? ' val-green' : '';
+                html += `<tr><td>${i+1}</td><td title="${v.smiles}">${v.smiles.substring(0,40)}</td><td class="val-cyan${best}">${v.score.toFixed(4)}</td></tr>`;
+            });
+            html += '</tbody></table>';
+        }
+        body.innerHTML = html;
+    } catch(e) { body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`; }
+}
+
+async function doEnumerate() {
+    const smiles = document.getElementById('gen-smiles').value.trim();
+    if (!smiles) return;
+    const card = document.getElementById('gen-results');
+    const body = document.getElementById('gen-results-body');
+    body.innerHTML = '<div style="color:#888">Enumerating...</div>';
+    card.style.display = 'block';
+    try {
+        const r = await fetch(BASE + '/generative/enumerate', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({smiles})
+        });
+        const data = await r.json();
+        if (data.error) { body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`; return; }
+        let html = statRow('Input', data.input_smiles) + statRow('Variants', data.n_variants, 'val-cyan');
+        if (data.variants && data.variants.length > 0) {
+            html += '<table style="margin-top:8px"><thead><tr><th>Rank</th><th>SMILES</th><th>Centers</th><th>Config</th><th>Score</th><th>Original</th></tr></thead><tbody>';
+            data.variants.forEach((v, i) => {
+                const config = Object.entries(v.configuration).map(([k,lab]) => `${k}:${lab}`).join(' ');
+                const orig = v.is_original ? '<span class="val-green">YES</span>' : '';
+                html += `<tr><td>${i+1}</td><td title="${v.smiles}">${v.smiles.substring(0,35)}</td><td>${v.n_centers}</td><td>${config}</td><td class="val-cyan">${v.score.toFixed(4)}</td><td>${orig}</td></tr>`;
+            });
+            html += '</tbody></table>';
+        }
+        body.innerHTML = html;
+    } catch(e) { body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`; }
+}
+
+document.getElementById('tgt-smiles-b').addEventListener('keydown', (e) => { if (e.key === 'Enter') doTargetProfile(); });
+document.getElementById('admet-smiles').addEventListener('keydown', (e) => { if (e.key === 'Enter') doADMETProfile(); });
+document.getElementById('admet-b').addEventListener('keydown', (e) => { if (e.key === 'Enter') doADMETCompare(); });
+document.getElementById('gen-smiles').addEventListener('keydown', (e) => { if (e.key === 'Enter') doOptimize(); });
+
 refresh();
 refreshCOD();
 refreshORD();
-refreshTimer = setInterval(() => { refresh(); refreshCOD(); refreshORD(); }, 15000);
+refreshTargets();
+refreshADMET();
+refreshTimer = setInterval(() => { refresh(); refreshCOD(); refreshORD(); refreshTargets(); refreshADMET(); }, 15000);
 </script>
 </body>
 </html>
