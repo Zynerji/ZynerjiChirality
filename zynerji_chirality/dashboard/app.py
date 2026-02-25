@@ -344,6 +344,64 @@ def create_app(
         except Exception as e:
             return JSONResponse(status_code=400, content={"error": str(e)})
 
+    # ── COD/ORD Pipeline Status endpoints ────────────────────────────────
+
+    @app.get("/cod/status")
+    def cod_status():
+        """Return COD pipeline progress."""
+        cod_work = Path(os.environ.get("COD_WORK_DIR", "cod_work"))
+        progress = None
+        for fname in ["cod_progress.json"]:
+            p = cod_work / fname
+            if p.exists():
+                try:
+                    with open(p) as f:
+                        progress = json.load(f)
+                except Exception:
+                    pass
+        hits = None
+        hits_path = cod_work / "screening_hits.json"
+        if hits_path.exists():
+            try:
+                with open(hits_path) as f:
+                    hits = json.load(f)
+            except Exception:
+                pass
+        return {
+            "pipeline": "cod",
+            "progress": progress,
+            "hits": hits[:50] if hits else [],
+            "total_hits": len(hits) if hits else 0,
+        }
+
+    @app.get("/ord/status")
+    def ord_status():
+        """Return ORD pipeline progress."""
+        ord_work = Path(os.environ.get("ORD_WORK_DIR", "ord_work"))
+        progress = None
+        for fname in ["ord_progress.json"]:
+            p = ord_work / fname
+            if p.exists():
+                try:
+                    with open(p) as f:
+                        progress = json.load(f)
+                except Exception:
+                    pass
+        hits = None
+        hits_path = ord_work / "screening_hits.json"
+        if hits_path.exists():
+            try:
+                with open(hits_path) as f:
+                    hits = json.load(f)
+            except Exception:
+                pass
+        return {
+            "pipeline": "ord",
+            "progress": progress,
+            "hits": hits[:50] if hits else [],
+            "total_hits": len(hits) if hits else 0,
+        }
+
     @app.get("/", response_class=HTMLResponse)
     def dashboard():
         return DASHBOARD_HTML
@@ -586,6 +644,8 @@ tr:hover td { background: #1a1a28; }
     <button class="tab" onclick="switchTab('search')">Search</button>
     <button class="tab" onclick="switchTab('materials')">Materials</button>
     <button class="tab" onclick="switchTab('catalysts')">Catalysts</button>
+    <button class="tab" onclick="switchTab('cod')">COD Pipeline</button>
+    <button class="tab" onclick="switchTab('ord')">ORD Pipeline</button>
 </div>
 
 <!-- Tab Content: Hits -->
@@ -682,6 +742,22 @@ tr:hover td { background: #1a1a28; }
     <div class="card" id="mat-results" style="display:none">
         <div class="card-title">Material Chirality Analysis</div>
         <div id="mat-results-body"></div>
+    </div>
+</div>
+
+<!-- Tab Content: COD Pipeline -->
+<div class="tab-content" id="tab-cod">
+    <div class="card">
+        <div class="card-title">COD Crystal Structure Pipeline</div>
+        <div id="cod-body"><div style="color:#888">Loading...</div></div>
+    </div>
+</div>
+
+<!-- Tab Content: ORD Pipeline -->
+<div class="tab-content" id="tab-ord">
+    <div class="card">
+        <div class="card-title">ORD Enantioselectivity Pipeline</div>
+        <div id="ord-body"><div style="color:#888">Loading...</div></div>
     </div>
 </div>
 
@@ -952,8 +1028,64 @@ async function doCatalystPredict() {
 document.getElementById('mat-smiles').addEventListener('keydown', (e) => { if (e.key === 'Enter') doMaterialAnalysis(); });
 document.getElementById('cat-substrate').addEventListener('keydown', (e) => { if (e.key === 'Enter') doCatalystPredict(); });
 
+async function refreshCOD() {
+    const data = await fetchJSON('/cod/status');
+    const body = document.getElementById('cod-body');
+    if (!data) { body.innerHTML = '<div style="color:#888">No COD data available</div>'; return; }
+    let html = '';
+    if (data.progress) {
+        const p = data.progress;
+        html += '<div style="margin-bottom:12px">';
+        html += statRow('Stage', p.stage || '-', 'val-cyan');
+        html += statRow('Progress', (p.percent_complete || 0) + '%', 'val-orange');
+        if (p.structures_enriched !== undefined) html += statRow('Structures', p.structures_enriched + ' / ' + p.structures_total);
+        if (p.structures_chiral !== undefined) html += statRow('Chiral', p.structures_chiral, 'val-green');
+        if (p.structures_done !== undefined) html += statRow('Fingerprinted', p.structures_done + ' / ' + p.structures_total);
+        html += '</div>';
+    }
+    if (data.hits && data.hits.length > 0) {
+        html += '<table><thead><tr><th>Type</th><th>COD ID</th><th>Formula</th><th>SG</th><th>Score</th></tr></thead><tbody>';
+        data.hits.forEach(h => {
+            html += '<tr><td>' + typeBadge(h.hit_type) + '</td><td>' + (h.cod_id||'') + '</td><td>' + (h.formula||'') + '</td><td>' + (h.sg_number||'') + '</td><td class="val-cyan">' + (h.priority_score||0).toFixed(3) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+    } else if (!data.progress) {
+        html += '<div style="color:#888">COD pipeline not started. Run: python scripts/cod_pipeline.py</div>';
+    }
+    body.innerHTML = html || '<div style="color:#888">Processing...</div>';
+}
+
+async function refreshORD() {
+    const data = await fetchJSON('/ord/status');
+    const body = document.getElementById('ord-body');
+    if (!data) { body.innerHTML = '<div style="color:#888">No ORD data available</div>'; return; }
+    let html = '';
+    if (data.progress) {
+        const p = data.progress;
+        html += '<div style="margin-bottom:12px">';
+        html += statRow('Stage', p.stage || '-', 'val-cyan');
+        html += statRow('Progress', (p.percent_complete || 0) + '%', 'val-orange');
+        if (p.reactions_enriched !== undefined) html += statRow('Reactions', p.reactions_enriched + ' / ' + p.reactions_total);
+        if (p.reactions_with_fingerprint !== undefined) html += statRow('Fingerprinted', p.reactions_with_fingerprint, 'val-green');
+        if (p.reactions_done !== undefined) html += statRow('FP Done', p.reactions_done + ' / ' + p.reactions_total);
+        html += '</div>';
+    }
+    if (data.hits && data.hits.length > 0) {
+        html += '<table><thead><tr><th>Type</th><th>Reaction</th><th>ee%</th><th>Catalyst</th><th>Score</th></tr></thead><tbody>';
+        data.hits.forEach(h => {
+            html += '<tr><td>' + typeBadge(h.hit_type) + '</td><td>' + (h.reaction_id||'').substring(0,20) + '</td><td class="val-green">' + (h.ee_percent||0).toFixed(1) + '%</td><td title="' + (h.catalyst||'') + '">' + (h.catalyst||'').substring(0,30) + '</td><td class="val-cyan">' + (h.priority_score||0).toFixed(1) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+    } else if (!data.progress) {
+        html += '<div style="color:#888">ORD pipeline not started. Run: python scripts/ord_pipeline.py</div>';
+    }
+    body.innerHTML = html || '<div style="color:#888">Processing...</div>';
+}
+
 refresh();
-refreshTimer = setInterval(refresh, 15000);
+refreshCOD();
+refreshORD();
+refreshTimer = setInterval(() => { refresh(); refreshCOD(); refreshORD(); }, 15000);
 </script>
 </body>
 </html>

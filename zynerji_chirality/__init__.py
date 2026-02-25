@@ -1,6 +1,6 @@
 """ZynerjiChirality — Chirality detection via dual-helix spectral graph analysis."""
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 # Core detection API
 from zynerji_chirality.chirality.detector import (
@@ -42,6 +42,18 @@ except ImportError:
 # Optional: Catalysts
 try:
     from zynerji_chirality.catalysts.ee_predictor import EEPredictor, EEPrediction
+except ImportError:
+    pass
+
+# Optional: COD pipeline
+try:
+    from zynerji_chirality.cod.download import CODDownloader, CrystalStructure
+except ImportError:
+    pass
+
+# Optional: ORD pipeline
+try:
+    from zynerji_chirality.ord.download import ORDDownloader, ORDReaction
 except ImportError:
     pass
 

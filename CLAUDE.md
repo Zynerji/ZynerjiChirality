@@ -6,7 +6,7 @@ Chirality detection via dual-helix spectral graph analysis. Detects whether a mo
 
 **Key insight**: Standard graph Laplacian eigenvalues are identical for enantiomers. The dual-helix Laplacian breaks this symmetry via phase modulation that depends on node ordering. CIP-priority canonical ordering with chirality-dependent cyclic shifts encodes handedness into the ordering, producing different spectral responses for R vs S.
 
-## Current Status (v0.4.0, 2026-02-24)
+## Current Status (v0.5.0, 2026-02-24)
 
 **All core benchmarks passing — 100%:**
 - Amino acids: 19/19 (100%) with opposite signs
@@ -21,6 +21,31 @@ Chirality detection via dual-helix spectral graph analysis. Detects whether a mo
 - Natural products: 3/3 (menthol, camphor, carvone)
 - Steroids: 2/2 (cholesterol, testosterone)
 - Tough achiral: 3/4 (norbornane embedding issue)
+
+### v0.5.0 — COD + ORD Data Pipelines (2026-02-24)
+
+**COD Crystal Structure Pipeline** (`zynerji_chirality/cod/`):
+- 4-stage pipeline: Discover → Enrich → Fingerprint → Screen
+- Queries COD REST API for 65 Sohncke (chiral) space groups
+- Downloads CIF files, builds adjacency via `materials/crystal.py`
+- Chirality analysis via `ChiralMaterialDetector.detect_from_adjacency()`
+- Screens for: high CD activity, high CISS, chiral perovskites
+- CLI: `scripts/cod_pipeline.py` (--db, --resume, --workers, --limit-per-sg)
+- Dashboard: "COD Pipeline" tab with progress + screening hits
+
+**ORD Enantioselectivity Pipeline** (`zynerji_chirality/ord/`):
+- 4-stage pipeline: Discover → Enrich → Fingerprint → Screen
+- Parses ORD .pb.gz protobuf files for reactions with ee% selectivity data
+- Extracts catalyst/substrate SMILES, computes chirality fingerprints
+- Combined fingerprint: [cat_fp, sub_fp, cat*sub, |cat-sub|] (4*nbits)
+- Screens for: high ee (>90%), novel catalysts, prediction gaps
+- Trains EEPredictor on ORD data (optional --train-model flag)
+- CLI: `scripts/ord_pipeline.py` (--db, --resume, --data-dir, --json-file, --train-model)
+- Dashboard: "ORD Pipeline" tab with progress + screening hits
+- Dependency: `ord-schema>=0.3` (optional, `pip install zynerji-chirality[ord]`)
+
+**Deploy**: `deploy/run_pipelines.sh` — launches both pipelines in tmux on Blackwell VM
+**Tests**: 31 new tests (15 COD + 16 ORD), total 200+
 
 ### v0.4.0 — Materials Science + Catalysts Expansion (2026-02-24)
 
@@ -158,8 +183,19 @@ zynerji_chirality/
     activity.py          # ActivityEnricher (ChEMBL bioactivity API)
     fingerprinter.py     # PairFingerprinter (parallel compute + batch DB insert)
     screen.py            # EnantiomerScreen (activity gaps, differential, query)
+  cod/                   # v0.5.0 — COD crystal structure pipeline
+    download.py          # CODDownloader (REST API, 65 Sohncke groups, CIF download)
+    enricher.py          # CODEnricher (CIF → adjacency → chirality analysis)
+    fingerprinter.py     # CrystalFingerprinter (parallel, batch DB)
+    screen.py            # CrystalScreen (high CD, high CISS, perovskites)
+  ord/                   # v0.5.0 — ORD enantioselectivity pipeline
+    download.py          # ORDDownloader (protobuf .pb.gz, JSON fallback)
+    extractor.py         # ORDExtractor (ee filtering, catalyst/substrate grouping)
+    enricher.py          # ORDEnricher (chirality fingerprints, combined FP)
+    fingerprinter.py     # ReactionFingerprinter (parallel, batch DB)
+    screen.py            # CatalystScreen (high ee, novel catalysts, prediction gaps)
   dashboard/
-    app.py               # FastAPI dashboard (dark theme, 6 tabs, auto-refresh)
+    app.py               # FastAPI dashboard (dark theme, 8 tabs, auto-refresh)
   db/
     store.py             # SQLite FingerprintStore + batch_add_fast + vectorized search
   ml/
@@ -172,7 +208,7 @@ zynerji_chirality/
     transfer.py          # ProchiralFaceDetector, ChiralityTransferPredictor
     retro.py             # RetroChiralityPlanner (strategy suggestions)
   viz.py                 # Spectral embedding visualization
-tests/                   # 158+ tests across 13 files
+tests/                   # 200+ tests across 15 files
 scripts/
   demo.py                # Quick demo with all features
   run_benchmarks.py      # Full benchmark suite (5 categories)
@@ -182,10 +218,13 @@ scripts/
   compare_fingerprints.py # ZynerjiChirality vs ECFP4 vs MACCS comparison
   train_activity_model.py # Demo activity model training
   chembl_pipeline.py     # ChEMBL enantiomer screening pipeline (4-stage CLI)
+  cod_pipeline.py        # COD crystal structure pipeline (4-stage CLI)
+  ord_pipeline.py        # ORD enantioselectivity pipeline (4-stage CLI)
   run_dashboard.py       # Standalone dashboard launcher
 deploy/
   chirality.service      # systemd service (port 8082, User=ivhl)
   nginx_chirality.conf   # nginx location block (/chirality/ -> 8082)
+  run_pipelines.sh       # Launch COD+ORD pipelines in tmux on VM
 ```
 
 ## Detection Pipeline
