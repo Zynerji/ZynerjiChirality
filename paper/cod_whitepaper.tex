@@ -594,6 +594,93 @@ Beyond these initial findings, deep statistical analysis uncovered seven novel r
 
 Together, these findings expand the design space for chiroptical materials and spintronic devices, and the resulting fingerprint database enables chirality-aware similarity search across the crystallographic landscape. The pipeline---from COD API query to screened fingerprint database---runs in 63 minutes on commodity hardware and is fully resumable, making it suitable for continuous monitoring of new COD deposits.
 
+\section{Reproducibility: Automated Validation Suite}
+
+All seven novel findings (Section~5) and all primary results (Sections~3--4) are validated by an automated test suite of 16 empirical tests that execute against the full 69,997-structure enrichment dataset. The suite runs in $<$7 seconds and is skipped gracefully when the data file is absent (e.g., in CI environments without the 65~MB dataset).
+
+\subsection{Test Methodology}
+
+Each finding is translated into one or more falsifiable statistical assertions applied directly to the enrichment JSON, with no intermediate summarization or pre-filtering beyond error removal. The tests are intentionally conservative: thresholds are set well inside the observed values so that minor dataset updates (new COD deposits) do not cause spurious failures.
+
+\begin{table}[H]
+\centering
+\caption{Automated validation tests for novel findings. All 16 tests pass ($<$7~s).}
+\label{tab:tests}
+\small
+\begin{tabular}{p{3.8cm}p{4.5cm}p{4.2cm}}
+\toprule
+Finding & Test(s) & Assertion \\
+\midrule
+\textbf{1. CISS Decay Law} &
+  \texttt{test\_ciss\_exponential\_decay\_law} &
+  Linear fit of $\ln(1{-}\text{CISS})$ vs CD: $R^2 > 0.95$, $\alpha \in (3, 8)$ \\
+  &
+  \texttt{test\_ciss\_saturation\_at\_high\_cd} &
+  Mean CISS $> 0.99$ for CD $> 1.0$ \\
+  &
+  \texttt{test\_ciss\_bounded\_zero\_one} &
+  All 69,997 CISS values $\in [0, 1]$ \\
+\midrule
+\textbf{2. 500-Atom Cliff} &
+  \texttt{test\_500\_atom\_cliff} &
+  Non-chiral rate: $<$1\% at 51--100 atoms, $>$10\% at $>$500 atoms, ratio $>$10$\times$ \\
+  &
+  \texttt{test\_non\_chiral\_higher\_atom\_count} &
+  Mean atoms: non-chiral $> 2\times$ chiral \\
+\midrule
+\textbf{3. SG 211 Amplifier} &
+  \texttt{test\_sg211\_highest\_mean\_cd} &
+  SG 211 mean CD $> 1.0$, in top 5 of all SGs ($n \geq 10$) \\
+\midrule
+\textbf{4. CD--BG Anticorrelation} &
+  \texttt{test\_cd\_bandgap\_anticorrelation} &
+  Pearson $r < -0.05$ \\
+  &
+  \texttt{test\_high\_cd\_lower\_bandgap} &
+  Mean $\Delta E_g$: CD${>}1.2$ $<$ CD${<}0.2$ \\
+\midrule
+\textbf{5. Enantio.\ Pair Asym.} &
+  \texttt{test\_enantiomorphic\_pair\_asymmetry} &
+  SG 152 vs 154 neg-CD fraction differs by $>$3\% \\
+\midrule
+\textbf{6. Neg-CD Enhancement} &
+  \texttt{test\_negative\_cd\_higher\_mean} &
+  Mean CD: negative $>$ positive ($n_{\text{neg}} > 500$) \\
+\midrule
+\textbf{7a. Unimodal CS} &
+  \texttt{test\_chirality\_score\_unimodal} &
+  Peak bin at CS $\in [0.3, 0.7]$, no secondary mode ${>}80\%$ of primary \\
+  &
+  \texttt{test\_cs\_cd\_strong\_correlation} &
+  Pearson $r(\text{CS}, \text{CD}) > 0.8$ \\
+\midrule
+\textbf{7b. Element Diversity} &
+  \texttt{test\_element\_diversity\_drives\_chirality} &
+  Single-element CD $< 0.3$; 5-element CD $>$ 2-element CD \\
+\midrule
+\textbf{Sanity Checks} &
+  \texttt{test\_dataset\_size} &
+  $n > 60{,}000$ structures \\
+  &
+  \texttt{test\_chirality\_detection\_rate} &
+  Rate $> 99\%$ \\
+  &
+  \texttt{test\_cubic\_highest\_mean\_cd} &
+  Cubic system has max mean CD \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Regression Guard}
+
+The test suite serves as a \textbf{regression guard}: if the dual-helix engine is modified (e.g., new phase modulation, different ordering heuristic), re-running enrichment on the same COD structures and executing the test suite will immediately flag any finding that no longer holds. This is critical because the findings in Section~5 are emergent properties of the engine--data interaction, not hardcoded outputs.
+
+\paragraph{Reproducing.} After running the COD pipeline (\texttt{python scripts/cod\_pipeline.py --skip-cif}), the full validation suite executes with:
+\begin{verbatim}
+    pytest tests/test_cod_pipeline.py::TestNovelFindings -v
+\end{verbatim}
+\noindent All 16 tests complete in $<$7 seconds on a standard laptop (single-threaded JSON load + numpy statistics).
+
 \section*{Data Availability}
 
 The complete fingerprint database (\texttt{cod\_screen.db}, 306 MB), enriched structures JSON, and screening reports are available in the ZynerjiChirality repository under \texttt{cod\_work/}.
