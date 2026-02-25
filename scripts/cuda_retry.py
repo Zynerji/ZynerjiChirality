@@ -91,7 +91,7 @@ def main():
 
             entry = {
                 "smiles": smiles,
-                "fingerprint": fp.tolist() if hasattr(fp, "tolist") else list(fp),
+                "fingerprint": fp,
                 "chirality_score": result.chirality_score,
                 "chirality_sign": result.chirality_sign,
                 "name": chembl_id,

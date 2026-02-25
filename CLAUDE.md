@@ -206,6 +206,44 @@ deploy/
 - fastapi, uvicorn (optional, `pip install zynerji-chirality[dashboard]`)
 - All optional: `pip install zynerji-chirality[all]`
 
+## Vast.ai GPU VM (Blackwell)
+
+**GPU**: NVIDIA RTX PRO 6000 Blackwell Workstation Edition (96 GB VRAM, SM 12.0)
+
+**Connection:**
+- SSH alias: `rtx6000` (configured in `~/.ssh/config`)
+- Host: `38.79.155.162`, Port: `61938`
+- User: `root`
+- SSH key: `~/.ssh/id_ed25519`
+
+```bash
+# Connect
+ssh rtx6000
+# or explicit:
+ssh -i ~/.ssh/id_ed25519 -p 61938 root@38.79.155.162
+
+# Copy files TO VM
+scp -i ~/.ssh/id_ed25519 -P 61938 local_file root@38.79.155.162:/opt/chirality/
+
+# Copy files FROM VM
+scp -i ~/.ssh/id_ed25519 -P 61938 root@38.79.155.162:/opt/chirality/chembl_work/chembl_screen.db .
+```
+
+**Data paths on VM:**
+- Code: `/opt/chirality/` (ZynerjiChirality repo)
+- Pipeline data: `/opt/chirality/chembl_work/`
+- DB: `/opt/chirality/chembl_work/chembl_screen.db`
+- CUDA module: `/opt/chirality/zynerji_chirality/cuda/`
+
+**tmux sessions:**
+- `gpu_bulk` — GPU fingerprinting of remaining molecules (cuda_retry.py)
+
+**CUDA kernels deployed:**
+- Distance geometry (triangle smoothing, refinement, chirality volume constraint, pairwise distances)
+- Used for 3D conformer generation replacing RDKit ETKDG (~12.5x speedup: 5-7 mol/s vs 0.4 mol/s CPU)
+
+**Important:** This is a rented VM — terminate after all chirality work is done to save budget.
+
 ## Known Limitations
 
 1. **Glucose sign**: Equal R/S count in multi-center sugars → `_cip_sign` returns 0.0

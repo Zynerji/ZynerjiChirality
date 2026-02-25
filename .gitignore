@@ -5,3 +5,17 @@ dist/
 build/
 .pytest_cache/
 *.png
+
+# ChEMBL pipeline data (large files)
+chembl_work/*.db
+chembl_work/*.json
+chembl_work/*.jsonl
+chembl_work/*.txt
+
+# LaTeX build artifacts
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.toc
+paper/*.bbl
+paper/*.blg

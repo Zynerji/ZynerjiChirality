@@ -1,6 +1,6 @@
 """ZynerjiChirality — Chirality detection via dual-helix spectral graph analysis."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 # Core detection API
 from zynerji_chirality.chirality.detector import (
@@ -20,12 +20,15 @@ from zynerji_chirality.chirality.fingerprint import (
 # Database
 from zynerji_chirality.db.store import FingerprintStore
 
-# Reactions
-from zynerji_chirality.reactions.reaction_graph import (
-    ReactionStereoAnalyzer,
-    ReactionStereoResult,
-)
-from zynerji_chirality.reactions.retro import RetroChiralityPlanner
+# Optional: Reactions (not needed for GPU pipeline)
+try:
+    from zynerji_chirality.reactions.reaction_graph import (
+        ReactionStereoAnalyzer,
+        ReactionStereoResult,
+    )
+    from zynerji_chirality.reactions.retro import RetroChiralityPlanner
+except ImportError:
+    pass
 
 __all__ = [
     "HelixChiralityDetector",
@@ -36,7 +39,4 @@ __all__ = [
     "batch_fingerprint",
     "fingerprint_similarity",
     "FingerprintStore",
-    "ReactionStereoAnalyzer",
-    "ReactionStereoResult",
-    "RetroChiralityPlanner",
 ]
