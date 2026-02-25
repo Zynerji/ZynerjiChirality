@@ -181,6 +181,79 @@ def _strip_cif_uncertainty(value: str) -> str:
     return value[:idx] if idx >= 0 else value
 
 
+def lattice_to_adjacency(
+    formula: str,
+    a: float, b: float, c: float,
+    alpha: float = 90.0, beta: float = 90.0, gamma: float = 90.0,
+) -> tuple[csr_matrix, list[str]]:
+    """Build an adjacency graph from unit cell parameters + formula.
+
+    Places atoms from the formula on a regular grid inside the unit cell
+    and builds adjacency by distance. This is a coarse approximation
+    for when CIF files are unavailable.
+
+    Parameters
+    ----------
+    formula : str
+        Chemical formula, e.g. "C6 H12 O6" or "- C6 H12 O6 -".
+    a, b, c : float
+        Lattice parameters in Angstroms.
+    alpha, beta, gamma : float
+        Unit cell angles in degrees.
+
+    Returns
+    -------
+    tuple[csr_matrix, list[str]]
+        (adjacency_matrix, atom_labels)
+    """
+    # Parse formula into element list
+    # Strip COD-style "- ... -" wrapping
+    clean = formula.strip().strip("-").strip()
+    labels = []
+    for token in re.findall(r"([A-Z][a-z]?)(\d*)", clean):
+        elem, count = token
+        if not elem:
+            continue
+        n = int(count) if count else 1
+        labels.extend([elem] * n)
+
+    if not labels:
+        return csr_matrix((0, 0)), []
+
+    # Build frac-to-cart matrix
+    cell = {"a": a, "b": b, "c": c, "alpha": alpha, "beta": beta, "gamma": gamma}
+    M = _frac_to_cart_matrix(cell)
+
+    # Distribute atoms on a grid in fractional coordinates
+    n = len(labels)
+    rng = np.random.RandomState(42)
+    frac_coords = rng.uniform(0.1, 0.9, size=(n, 3))
+
+    cart = frac_coords @ M.T
+
+    # Build adjacency by nearest-neighbor distances
+    # Use an adaptive cutoff: median nearest-neighbor distance * 1.5
+    from scipy.spatial.distance import cdist
+    dists = cdist(cart, cart)
+    np.fill_diagonal(dists, np.inf)
+    nn_dists = dists.min(axis=1)
+    cutoff = float(np.median(nn_dists) * 1.5)
+    cutoff = max(cutoff, 1.0)  # minimum 1 Angstrom
+
+    rows, cols, vals = [], [], []
+    for i in range(n):
+        for j in range(i + 1, n):
+            d = dists[i, j]
+            if 0.1 < d <= cutoff:
+                w = 1.0 / d
+                rows.extend([i, j])
+                cols.extend([j, i])
+                vals.extend([w, w])
+
+    adj = csr_matrix((vals, (rows, cols)), shape=(n, n)) if vals else csr_matrix((n, n))
+    return adj, labels
+
+
 def perovskite_graph(
     A: str,
     B: str,

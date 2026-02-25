@@ -107,7 +107,7 @@ class CODDownloader:
         """
         url = (
             f"{self.BASE_URL}/result?format=json"
-            f"&sg={sg_number}"
+            f"&space_group_number={sg_number}"
             f"&max={limit}"
         )
         results = self._fetch_json(url)

@@ -89,11 +89,13 @@ class PairFingerprinter:
                         "smiles": mol.canonical_smiles,
                     }
 
-        # Skip molecules already in DB
-        import sqlite3
-        _db = sqlite3.connect(self.store.db_path)
-        existing_smiles = set(r[0] for r in _db.execute("SELECT smiles FROM molecules").fetchall())
-        _db.close()
+        # Skip molecules already in DB (use store's connection, not a new one,
+        # so :memory: DBs work correctly in tests)
+        existing_smiles = set(
+            r[0] for r in self.store._conn.execute(
+                "SELECT smiles FROM molecules"
+            ).fetchall()
+        )
         before_skip = len(all_smiles)
         all_smiles = [s for s in all_smiles if s not in existing_smiles]
 

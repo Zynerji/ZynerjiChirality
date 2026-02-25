@@ -64,7 +64,7 @@ def stage_enrich(args, structures: list) -> list:
     progress_path = Path(args.work_dir) / "cod_progress.json"
     cif_dir = str(Path(args.work_dir) / "cifs")
 
-    enricher = CODEnricher(cutoff=args.cutoff)
+    enricher = CODEnricher(cutoff=args.cutoff, skip_cif=args.skip_cif)
     enrichments = enricher.enrich_batch(
         structures,
         cif_dir=cif_dir,
@@ -162,6 +162,11 @@ def main():
         type=int,
         default=100,
         help="Checkpoint interval for enrichment",
+    )
+    parser.add_argument(
+        "--skip-cif",
+        action="store_true",
+        help="Skip CIF download, use lattice parameters only (faster, no network needed)",
     )
 
     args = parser.parse_args()

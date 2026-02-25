@@ -15,7 +15,7 @@ import numpy as np
 from scipy.sparse import csr_matrix
 
 from zynerji_chirality.cod.download import CODDownloader, CrystalStructure
-from zynerji_chirality.materials.crystal import cif_to_adjacency
+from zynerji_chirality.materials.crystal import cif_to_adjacency, lattice_to_adjacency
 from zynerji_chirality.materials.detector import (
     ChiralMaterialDetector,
     MaterialChiralityResult,
@@ -84,23 +84,38 @@ class CODEnricher:
         Distance cutoff (Angstroms) for adjacency matrix construction.
     """
 
-    def __init__(self, cutoff: float = 3.0):
+    def __init__(self, cutoff: float = 3.0, skip_cif: bool = False):
         self.cutoff = cutoff
+        self.skip_cif = skip_cif
         self.detector = ChiralMaterialDetector()
         self.downloader = CODDownloader()
 
     def enrich_structure(
         self, structure: CrystalStructure, cif_dir: str
     ) -> CrystalEnrichment:
-        """Enrich a single structure by downloading CIF and analyzing chirality."""
-        try:
-            cif_path = self.downloader.download_cif(structure.cod_id, cif_dir)
-            if not cif_path:
-                return self._error_enrichment(structure, "CIF download failed")
+        """Enrich a single structure by downloading CIF and analyzing chirality.
 
-            adj, labels = cif_to_adjacency(cif_path, cutoff=self.cutoff)
-            if adj.shape[0] == 0:
-                return self._error_enrichment(structure, "Empty adjacency matrix")
+        Falls back to lattice-parameter-based graph if CIF download fails.
+        """
+        try:
+            # Try CIF-based enrichment first (unless skip_cif)
+            adj, labels = None, None
+            if not self.skip_cif:
+                cif_path = self.downloader.download_cif(structure.cod_id, cif_dir)
+                if cif_path:
+                    adj, labels = cif_to_adjacency(cif_path, cutoff=self.cutoff)
+                    if adj.shape[0] == 0:
+                        adj, labels = None, None
+
+            # Fallback: build graph from lattice parameters + formula
+            if adj is None or labels is None:
+                adj, labels = lattice_to_adjacency(
+                    structure.formula,
+                    structure.a, structure.b, structure.c,
+                    structure.alpha, structure.beta, structure.gamma,
+                )
+                if adj.shape[0] == 0:
+                    return self._error_enrichment(structure, "Empty adjacency matrix")
 
             result = self.detector.detect_from_adjacency(
                 adj.toarray() if hasattr(adj, "toarray") else adj,
