@@ -287,6 +287,63 @@ def create_app(
             ],
         }
 
+    # ── Materials & Catalysts endpoints ──────────────────────────────────
+
+    @app.post("/materials/analyze")
+    def analyze_material(request_body: dict = None):
+        """Analyze chirality of a material from SMILES."""
+        if request_body is None:
+            return JSONResponse(status_code=400, content={"error": "Request body required"})
+        smiles = request_body.get("smiles", "")
+        if not smiles:
+            return JSONResponse(status_code=400, content={"error": "smiles field required"})
+
+        try:
+            from zynerji_chirality.materials.detector import ChiralMaterialDetector
+            detector = ChiralMaterialDetector()
+            result = detector.detect_material(smiles)
+            return {
+                "smiles": smiles,
+                "is_chiral": result.is_chiral,
+                "chirality_score": round(result.chirality_score, 6),
+                "chirality_sign": result.chirality_sign,
+                "cd_activity": round(result.cd_activity, 6),
+                "cd_sign": result.cd_sign,
+                "ciss_score": round(result.ciss_score, 4),
+                "optical_rotation": result.optical_rotation,
+                "material_class": result.material_class,
+                "band_gap_shift": round(result.band_gap_shift, 6),
+            }
+        except Exception as e:
+            return JSONResponse(status_code=400, content={"error": str(e)})
+
+    @app.post("/catalysts/predict-ee")
+    def predict_ee(request_body: dict = None):
+        """Predict enantiomeric excess for a catalyst-substrate pair."""
+        if request_body is None:
+            return JSONResponse(status_code=400, content={"error": "Request body required"})
+        catalyst = request_body.get("catalyst", "")
+        substrate = request_body.get("substrate", "")
+        if not catalyst or not substrate:
+            return JSONResponse(status_code=400, content={"error": "catalyst and substrate fields required"})
+
+        try:
+            from zynerji_chirality.catalysts.ee_predictor import EEPredictor
+            from zynerji_chirality.catalysts.benchmarks import get_benchmark_data
+
+            predictor = EEPredictor(nbits=64)
+            predictor.fit(get_benchmark_data())
+            pred = predictor.predict_ee(catalyst, substrate)
+            return {
+                "catalyst": catalyst,
+                "substrate": substrate,
+                "ee_percent": round(pred.ee_percent, 1),
+                "major_enantiomer": pred.major_enantiomer,
+                "confidence": round(pred.confidence, 3),
+            }
+        except Exception as e:
+            return JSONResponse(status_code=400, content={"error": str(e)})
+
     @app.get("/", response_class=HTMLResponse)
     def dashboard():
         return DASHBOARD_HTML
@@ -527,6 +584,8 @@ tr:hover td { background: #1a1a28; }
     <button class="tab" onclick="switchTab('pairs')">Enantiomer Pairs</button>
     <button class="tab" onclick="switchTab('differential')">Differential Activity</button>
     <button class="tab" onclick="switchTab('search')">Search</button>
+    <button class="tab" onclick="switchTab('materials')">Materials</button>
+    <button class="tab" onclick="switchTab('catalysts')">Catalysts</button>
 </div>
 
 <!-- Tab Content: Hits -->
@@ -611,6 +670,31 @@ tr:hover td { background: #1a1a28; }
             </thead>
             <tbody id="search-results"></tbody>
         </table>
+    </div>
+</div>
+
+<!-- Tab Content: Materials -->
+<div class="tab-content" id="tab-materials">
+    <div class="search-box">
+        <input type="text" id="mat-smiles" placeholder="Enter SMILES (e.g. N[C@@H](C)C(=O)O)" />
+        <button onclick="doMaterialAnalysis()">Analyze Material</button>
+    </div>
+    <div class="card" id="mat-results" style="display:none">
+        <div class="card-title">Material Chirality Analysis</div>
+        <div id="mat-results-body"></div>
+    </div>
+</div>
+
+<!-- Tab Content: Catalysts -->
+<div class="tab-content" id="tab-catalysts">
+    <div class="search-box">
+        <input type="text" id="cat-catalyst" placeholder="Catalyst SMILES" style="flex:1" />
+        <input type="text" id="cat-substrate" placeholder="Substrate SMILES" style="flex:1" />
+        <button onclick="doCatalystPredict()">Predict ee</button>
+    </div>
+    <div class="card" id="cat-results" style="display:none">
+        <div class="card-title">Enantioselectivity Prediction</div>
+        <div id="cat-results-body"></div>
     </div>
 </div>
 
@@ -797,6 +881,76 @@ async function doSearch() {
 document.getElementById('search-smiles').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') doSearch();
 });
+
+async function doMaterialAnalysis() {
+    const smiles = document.getElementById('mat-smiles').value.trim();
+    if (!smiles) return;
+    const card = document.getElementById('mat-results');
+    const body = document.getElementById('mat-results-body');
+    body.innerHTML = '<div style="color:#888">Analyzing...</div>';
+    card.style.display = 'block';
+
+    try {
+        const r = await fetch(BASE + '/materials/analyze', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({smiles})
+        });
+        const data = await r.json();
+        if (data.error) {
+            body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`;
+            return;
+        }
+        const chiral = data.is_chiral ? '<span class="val-green">CHIRAL</span>' : '<span class="val-red">ACHIRAL</span>';
+        body.innerHTML =
+            statRow('Status', chiral) +
+            statRow('Chirality Score', data.chirality_score.toFixed(6), 'val-cyan') +
+            statRow('Material Class', data.material_class) +
+            '<div style="margin:8px 0;border-top:1px solid #1e1e2e;padding-top:8px"><span style="color:#00d4ff;font-size:11px">CIRCULAR DICHROISM</span></div>' +
+            statRow('CD Activity', data.cd_activity.toFixed(6), data.cd_sign === 'positive' ? 'val-green' : data.cd_sign === 'negative' ? 'val-red' : '') +
+            statRow('CD Sign', data.cd_sign) +
+            '<div style="margin:8px 0;border-top:1px solid #1e1e2e;padding-top:8px"><span style="color:#00d4ff;font-size:11px">SPIN SELECTIVITY</span></div>' +
+            statRow('CISS Score', data.ciss_score.toFixed(4), data.ciss_score > 0.5 ? 'val-green' : '') +
+            statRow('Optical Rotation', data.optical_rotation) +
+            statRow('Band Gap Shift', data.band_gap_shift.toFixed(6));
+    } catch(e) {
+        body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`;
+    }
+}
+
+async function doCatalystPredict() {
+    const catalyst = document.getElementById('cat-catalyst').value.trim();
+    const substrate = document.getElementById('cat-substrate').value.trim();
+    if (!catalyst || !substrate) return;
+    const card = document.getElementById('cat-results');
+    const body = document.getElementById('cat-results-body');
+    body.innerHTML = '<div style="color:#888">Predicting (training model on benchmark data)...</div>';
+    card.style.display = 'block';
+
+    try {
+        const r = await fetch(BASE + '/catalysts/predict-ee', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({catalyst, substrate})
+        });
+        const data = await r.json();
+        if (data.error) {
+            body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`;
+            return;
+        }
+        const eeColor = data.ee_percent > 90 ? 'val-green' : data.ee_percent > 50 ? 'val-orange' : 'val-red';
+        body.innerHTML =
+            statRow('Predicted ee', data.ee_percent.toFixed(1) + '%', eeColor) +
+            statRow('Major Enantiomer', data.major_enantiomer, data.major_enantiomer === 'R' ? 'val-green' : 'val-red') +
+            statRow('Confidence', data.confidence.toFixed(3)) +
+            '<div style="margin:8px 0;border-top:1px solid #1e1e2e;padding-top:8px;color:#666;font-size:10px">Model trained on BINAP hydrogenation benchmark (10 reactions)</div>';
+    } catch(e) {
+        body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`;
+    }
+}
+
+document.getElementById('mat-smiles').addEventListener('keydown', (e) => { if (e.key === 'Enter') doMaterialAnalysis(); });
+document.getElementById('cat-substrate').addEventListener('keydown', (e) => { if (e.key === 'Enter') doCatalystPredict(); });
 
 refresh();
 refreshTimer = setInterval(refresh, 15000);

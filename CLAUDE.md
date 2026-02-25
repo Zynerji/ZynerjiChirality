@@ -6,7 +6,7 @@ Chirality detection via dual-helix spectral graph analysis. Detects whether a mo
 
 **Key insight**: Standard graph Laplacian eigenvalues are identical for enantiomers. The dual-helix Laplacian breaks this symmetry via phase modulation that depends on node ordering. CIP-priority canonical ordering with chirality-dependent cyclic shifts encodes handedness into the ordering, producing different spectral responses for R vs S.
 
-## Current Status (v0.3.0, 2026-02-22)
+## Current Status (v0.4.0, 2026-02-24)
 
 **All core benchmarks passing — 100%:**
 - Amino acids: 19/19 (100%) with opposite signs
@@ -21,6 +21,30 @@ Chirality detection via dual-helix spectral graph analysis. Detects whether a mo
 - Natural products: 3/3 (menthol, camphor, carvone)
 - Steroids: 2/2 (cholesterol, testosterone)
 - Tough achiral: 3/4 (norbornane embedding issue)
+
+### v0.4.0 — Materials Science + Catalysts Expansion (2026-02-24)
+
+**Materials Science Module** (`zynerji_chirality/materials/`):
+- `ChiralMaterialDetector` — wraps core engine for material-level analysis
+- Supports SMILES input (molecular materials) and raw adjacency matrices (crystals/metamaterials)
+- Properties: circular dichroism (CD activity + sign), CISS score (spin selectivity), optical rotation, band gap shift
+- Crystal utilities: CIF parser (pure Python, no pymatgen), perovskite ABX3 graph generator, polymer repeat graph
+- Visualization: simulated CD spectrum, CISS polar diagram, material comparison bar charts
+- Dashboard: "Materials" tab with SMILES input → full material analysis
+- CLI: `scripts/run_materials.py` (--smiles, --cif, --perovskite, --compare)
+
+**Catalysts Module** (`zynerji_chirality/catalysts/`):
+- `EEPredictor` — predicts enantiomeric excess (ee%) from catalyst+substrate chirality fingerprints
+  - Combined fingerprint: catalyst FP + substrate FP + interaction (product + difference) = 4*nbits
+  - Subclasses `BaseChiralPredictor` (sklearn RF/GB)
+- `LigandScreener` — ranks ligands by predicted ee (ML mode) or chirality score (heuristic mode)
+- `CatalyticReactionAnalyzer` — extends `ReactionStereoAnalyzer` with catalyst chirality + face selectivity
+- BINAP hydrogenation benchmark: 10 known Ru-BINAP catalyzed reactions with published ee values
+- Dashboard: "Catalysts" tab with catalyst+substrate SMILES → predicted ee
+- CLI: `scripts/run_catalysts.py` (--predict, --screen, --benchmark, --rank-ligands)
+
+**Tests**: 24+ new tests (12+ materials, 12+ catalysts), total 158+
+**No new dependencies** — all built on numpy/scipy/rdkit/sklearn
 
 ### v0.3.0 — ChEMBL Enantiomer Screening Pipeline (2026-02-22)
 
@@ -111,6 +135,16 @@ zynerji_chirality/
   chirality/
     detector.py          # HelixChiralityDetector (detect, detect_per_center, detect_ensemble)
     fingerprint.py       # Spectral fingerprint + batch + cached projection
+  materials/             # v0.4.0 — Chiral materials science
+    detector.py          # ChiralMaterialDetector (CD, CISS, rotation, adjacency input)
+    properties.py        # CD activity, CISS score, optical rotation, band gap shift
+    crystal.py           # CIF parser, perovskite graph, polymer repeat graph
+    visualization.py     # CD spectrum, CISS diagram, material comparison plots
+  catalysts/             # v0.4.0 — Chiral catalysts / enantioselectivity
+    ee_predictor.py      # EEPredictor (ee% from catalyst+substrate fingerprints)
+    ligand_screen.py     # LigandScreener (ML or heuristic ligand ranking)
+    reaction_sim.py      # CatalyticReactionAnalyzer (face selectivity + catalyst chirality)
+    benchmarks.py        # BINAP hydrogenation benchmark (10 known reactions)
   benchmarks/
     amino_acids.py       # 19 L/D amino acid pairs + glycine
     rs_pairs.py          # 12 R/S drug pairs
@@ -125,7 +159,7 @@ zynerji_chirality/
     fingerprinter.py     # PairFingerprinter (parallel compute + batch DB insert)
     screen.py            # EnantiomerScreen (activity gaps, differential, query)
   dashboard/
-    app.py               # FastAPI dashboard (dark theme, 4 tabs, auto-refresh)
+    app.py               # FastAPI dashboard (dark theme, 6 tabs, auto-refresh)
   db/
     store.py             # SQLite FingerprintStore + batch_add_fast + vectorized search
   ml/
@@ -138,10 +172,12 @@ zynerji_chirality/
     transfer.py          # ProchiralFaceDetector, ChiralityTransferPredictor
     retro.py             # RetroChiralityPlanner (strategy suggestions)
   viz.py                 # Spectral embedding visualization
-tests/                   # 134 tests across 11 files
+tests/                   # 158+ tests across 13 files
 scripts/
   demo.py                # Quick demo with all features
   run_benchmarks.py      # Full benchmark suite (5 categories)
+  run_materials.py       # Materials chirality CLI (SMILES, CIF, perovskite, compare)
+  run_catalysts.py       # Catalyst screening CLI (predict ee, screen ligands, benchmark)
   ingest.py              # CLI for batch SMILES ingestion
   compare_fingerprints.py # ZynerjiChirality vs ECFP4 vs MACCS comparison
   train_activity_model.py # Demo activity model training
