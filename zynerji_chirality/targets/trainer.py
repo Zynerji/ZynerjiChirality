@@ -60,6 +60,8 @@ class TargetModelTrainer:
         self,
         enriched_path: str | Path,
         resume: bool = False,
+        only_targets: list[str] | None = None,
+        precomputed_fps_path: str | None = None,
     ) -> TrainingResult:
         """Full training pipeline: extract -> train per-target -> train global -> save.
 
@@ -69,21 +71,40 @@ class TargetModelTrainer:
             Path to enriched_pairs.json.
         resume : bool
             If True, skip targets already trained.
-
-        Returns
-        -------
-        TrainingResult
-            Training summary with R2 scores.
+        only_targets : list[str] or None
+            If provided, only train models for these target IDs (parallel worker mode).
+        precomputed_fps_path : str or None
+            Path to fp_precomputed.pkl. If provided, pre-populates the fingerprint
+            cache at startup so workers skip all fingerprint computation.
         """
         start = time.time()
         self.work_dir.mkdir(parents=True, exist_ok=True)
+
+        # Pre-populate fingerprint cache from disk if available
+        if precomputed_fps_path is not None:
+            import pickle
+            from pathlib import Path as _Path
+            from zynerji_chirality.chirality.fingerprint import _FP_CACHE, _FP_CACHE_MAX
+            fp_path = _Path(precomputed_fps_path)
+            if fp_path.exists():
+                with open(fp_path, "rb") as _f:
+                    precomputed: dict = pickle.load(_f)
+                # Inject into global LRU cache keyed by (smiles, nbits)
+                for _smiles, _fp in precomputed.items():
+                    if len(_FP_CACHE) >= _FP_CACHE_MAX:
+                        _FP_CACHE.popitem(last=False)
+                    _FP_CACHE[(_smiles, self.nbits)] = _fp
+                logger.info("Loaded %d precomputed fingerprints into cache", len(precomputed))
+            else:
+                logger.warning("precomputed_fps_path not found: %s", fp_path)
 
         # Load or compute done_ids for resume
         done_path = self.work_dir / "done_targets.json"
         done_ids: set[str] = set()
         if resume and done_path.exists():
             with open(done_path) as f:
-                done_ids = set(json.load(f))
+                raw = json.load(f)
+                done_ids = set(raw if isinstance(raw, list) else raw.keys())
             logger.info("Resuming: %d targets already trained", len(done_ids))
 
         # Extract data
@@ -95,6 +116,12 @@ class TargetModelTrainer:
         else:
             datasets = extractor.extract_from_enriched(enriched_path)
             extractor.save_datasets(datasets, datasets_path)
+
+        # Filter to assigned targets if in parallel worker mode
+        if only_targets is not None:
+            only_set = set(only_targets)
+            datasets = [d for d in datasets if d.target_chembl_id in only_set]
+            logger.info("Worker mode: %d targets assigned", len(datasets))
 
         # Train per-target models
         n_trained = 0

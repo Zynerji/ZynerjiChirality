@@ -9,6 +9,8 @@ structural topology and handedness. Useful for:
 
 from __future__ import annotations
 
+from collections import OrderedDict
+
 import numpy as np
 
 from zynerji_chirality.core.dual_helix import HelixParams, compute_spectral_coords
@@ -24,6 +26,18 @@ from rdkit import Chem
 
 # Projection matrix cache: keyed by (raw_dim, nbits)
 _PROJ_CACHE: dict[tuple[int, int], np.ndarray] = {}
+
+# Fingerprint result cache: keyed by (smiles, nbits) for default-params calls.
+# Eliminates redundant fingerprint computation when the same SMILES is fingerprinted
+# across multiple target models or in batch training (same molecule, many targets).
+# Each entry: 128 floats × 8 bytes = 1KB. 100K entries = ~100MB.
+_FP_CACHE: OrderedDict[tuple[str, int], np.ndarray] = OrderedDict()
+_FP_CACHE_MAX = 120_000
+
+
+def clear_fingerprint_cache() -> None:
+    """Clear the chirality fingerprint result cache."""
+    _FP_CACHE.clear()
 
 
 def _get_projection_matrix(raw_dim: int, nbits: int) -> np.ndarray:
@@ -68,9 +82,34 @@ def chirality_fingerprint(
     if params is None:
         params = HelixParams()
 
-    # Parse and embed
+    # Cache lookup: only for string SMILES with default params/weight
+    # (training always uses these defaults, so this covers ~100% of training calls)
+    _cache_key = None
+    if isinstance(smiles_or_mol, str) and chiral_weight == 0.5:
+        _cache_key = (smiles_or_mol, nbits)
+        if _cache_key in _FP_CACHE:
+            _FP_CACHE.move_to_end(_cache_key)
+            return _FP_CACHE[_cache_key].copy()
+
+    # Parse molecule
     if isinstance(smiles_or_mol, str):
-        mol = smiles_to_mol3d(smiles_or_mol)
+        # Fast path: if stereo is already annotated in SMILES (@ or @@),
+        # CIP labels can be assigned from 2D topology — no 3D embedding needed.
+        # This is true for all ChEMBL/training data with explicit stereo marks.
+        # Only fall back to smiles_to_mol3d() for molecules with unannotated
+        # stereocenters that require 3D geometry to determine R/S.
+        mol_2d = Chem.MolFromSmiles(smiles_or_mol)
+        if mol_2d is not None:
+            Chem.AssignStereochemistry(mol_2d, cleanIt=True, force=True)
+            assigned = Chem.FindMolChiralCenters(mol_2d, includeUnassigned=False)
+            unassigned = Chem.FindMolChiralCenters(mol_2d, includeUnassigned=True)
+            # Use 2D if: achiral, or all stereocenters are already assigned
+            if len(unassigned) == 0 or len(assigned) == len(unassigned):
+                mol = mol_2d
+            else:
+                mol = smiles_to_mol3d(smiles_or_mol)
+        else:
+            raise ValueError(f"Cannot parse SMILES: {smiles_or_mol}")
     else:
         mol = smiles_or_mol
 
@@ -122,6 +161,12 @@ def chirality_fingerprint(
     # Hash to fixed length using cached random projection (deterministic seed)
     proj = _get_projection_matrix(len(raw), nbits)
     fp = raw @ proj
+
+    # Store in cache
+    if _cache_key is not None:
+        if len(_FP_CACHE) >= _FP_CACHE_MAX:
+            _FP_CACHE.popitem(last=False)
+        _FP_CACHE[_cache_key] = fp.copy()
 
     return fp
 

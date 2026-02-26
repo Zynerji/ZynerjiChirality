@@ -47,7 +47,11 @@ class BaseChiralPredictor:
     def _create_model(self):
         """Create the sklearn model instance."""
         try:
-            from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+            from sklearn.ensemble import (
+                RandomForestRegressor,
+                GradientBoostingRegressor,
+                HistGradientBoostingRegressor,
+            )
         except ImportError:
             raise ImportError(
                 "scikit-learn is required for ML models. "
@@ -62,6 +66,10 @@ class BaseChiralPredictor:
             defaults = {"n_estimators": 100, "random_state": 42, "max_depth": 5}
             defaults.update(self.model_kwargs)
             return GradientBoostingRegressor(**defaults)
+        elif self.model_type == "hist_gradient_boosting":
+            defaults = {"max_iter": 150, "random_state": 42, "max_depth": 4}
+            defaults.update(self.model_kwargs)
+            return HistGradientBoostingRegressor(**defaults)
         else:
             raise ValueError(f"Unknown model type: {self.model_type}")
 

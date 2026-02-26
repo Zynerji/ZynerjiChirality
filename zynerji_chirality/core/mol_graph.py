@@ -6,11 +6,71 @@ for dual-helix spectral decomposition.
 
 from __future__ import annotations
 
+import logging
+from collections import OrderedDict
+
 import numpy as np
 from scipy.sparse import csr_matrix
 
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdmolops
+
+_logger = logging.getLogger(__name__)
+
+# ---------- GPU pipeline + mol3d cache ----------
+# Set via set_cuda_pipeline() at startup for GPU-accelerated 3D embedding.
+_CUDA_PIPELINE = None
+
+# Atom count threshold: molecules with >= this many heavy atoms use GPU first.
+# Below this, CPU ETKDG is faster (~0.1s) than GPU DG (~1.5s for small mols).
+_GPU_ATOM_THRESHOLD = 80
+
+# LRU cache: SMILES -> RDKit Mol with 3D conformer.
+# Eliminates redundant embeddings when the same SMILES is fingerprinted
+# multiple times (e.g., build_feature_vector calls chirality_fingerprint
+# AND detector.detect for the same SMILES).
+_MOL3D_CACHE: OrderedDict[str, Chem.Mol] = OrderedDict()
+_MOL3D_CACHE_MAX = 50_000
+
+
+def set_cuda_pipeline(pipeline, gpu_atom_threshold: int = 80) -> None:
+    """Set a global CUDAConformerPipeline for GPU-accelerated 3D embedding.
+
+    Call once at startup. Molecules with >= gpu_atom_threshold heavy atoms
+    use GPU directly. Smaller molecules try CPU ETKDG first (faster for
+    typical drug molecules), with GPU as fallback when CPU fails.
+
+    Parameters
+    ----------
+    pipeline : CUDAConformerPipeline or None
+        Pass None to disable GPU and revert to CPU-only.
+    gpu_atom_threshold : int
+        Minimum heavy atom count to prefer GPU over CPU ETKDG.
+    """
+    global _CUDA_PIPELINE, _GPU_ATOM_THRESHOLD
+    _CUDA_PIPELINE = pipeline
+    _GPU_ATOM_THRESHOLD = gpu_atom_threshold
+    if pipeline is not None:
+        _logger.info(
+            "GPU pipeline enabled (threshold=%d atoms)", gpu_atom_threshold
+        )
+    else:
+        _logger.info("GPU pipeline disabled, using CPU ETKDG")
+
+
+def clear_mol3d_cache() -> None:
+    """Clear the smiles_to_mol3d() result cache."""
+    _MOL3D_CACHE.clear()
+
+
+def _cache_put(smiles: str, mol: Chem.Mol) -> None:
+    """Add to LRU cache, evicting oldest if full."""
+    if smiles in _MOL3D_CACHE:
+        _MOL3D_CACHE.move_to_end(smiles)
+        return
+    if len(_MOL3D_CACHE) >= _MOL3D_CACHE_MAX:
+        _MOL3D_CACHE.popitem(last=False)
+    _MOL3D_CACHE[smiles] = mol
 
 
 # Bond type to weight mapping
@@ -134,7 +194,10 @@ def mol_to_chiral_adjacency(
 
 
 def smiles_to_mol3d(smiles: str) -> Chem.Mol:
-    """Parse SMILES and generate 3D conformer with ETKDG.
+    """Parse SMILES and generate 3D conformer.
+
+    Uses GPU (CUDAConformerPipeline) when available, falling back to CPU
+    ETKDG. Results are cached to avoid redundant 3D embeddings.
 
     Parameters
     ----------
@@ -151,11 +214,28 @@ def smiles_to_mol3d(smiles: str) -> Chem.Mol:
     ValueError
         If SMILES cannot be parsed or 3D embedding fails.
     """
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        raise ValueError(f"Cannot parse SMILES: {smiles}")
+    # Check cache first
+    if smiles in _MOL3D_CACHE:
+        _MOL3D_CACHE.move_to_end(smiles)
+        return _MOL3D_CACHE[smiles]
 
-    mol = Chem.AddHs(mol)
+    # Determine molecule size for GPU vs CPU decision
+    _parsed = Chem.MolFromSmiles(smiles)
+    if _parsed is None:
+        raise ValueError(f"Cannot parse SMILES: {smiles}")
+    n_heavy = _parsed.GetNumHeavyAtoms()
+
+    # Large molecules: GPU first (CPU ETKDG often hangs or is very slow)
+    if _CUDA_PIPELINE is not None and n_heavy >= _GPU_ATOM_THRESHOLD:
+        try:
+            mol = _CUDA_PIPELINE.embed_molecule(smiles)
+            _cache_put(smiles, mol)
+            return mol
+        except Exception as e:
+            _logger.debug("CUDA embed failed for %s, CPU fallback: %s", smiles[:60], e)
+
+    # CPU path: ETKDG (fast for small-to-medium molecules)
+    mol = Chem.AddHs(_parsed)
 
     # ETKDG for 3D conformer generation
     params = AllChem.ETKDGv3()
@@ -172,6 +252,14 @@ def smiles_to_mol3d(smiles: str) -> Chem.Mol:
             params2.useRandomCoords = True
             status = AllChem.EmbedMolecule(mol, params2)
             if status == -1:
+                # Fallback 3: try GPU if available (even below threshold)
+                if _CUDA_PIPELINE is not None:
+                    try:
+                        mol = _CUDA_PIPELINE.embed_molecule(smiles)
+                        _cache_put(smiles, mol)
+                        return mol
+                    except Exception:
+                        pass
                 raise ValueError(f"Cannot embed 3D conformer for: {smiles}")
             used_random_coords = True
 
@@ -183,6 +271,7 @@ def smiles_to_mol3d(smiles: str) -> Chem.Mol:
     # Assign stereochemistry from 3D
     Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
 
+    _cache_put(smiles, mol)
     return mol
 
 

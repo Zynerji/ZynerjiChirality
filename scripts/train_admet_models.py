@@ -24,18 +24,36 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _enable_gpu():
+    """Try to enable CUDA pipeline for GPU-accelerated 3D embedding."""
+    try:
+        from zynerji_chirality.cuda.pipeline import CUDAConformerPipeline
+        from zynerji_chirality.core.mol_graph import set_cuda_pipeline
+        pipeline = CUDAConformerPipeline(device=0)
+        set_cuda_pipeline(pipeline)
+        logger.info("GPU acceleration ENABLED (CUDA conformer pipeline)")
+        return True
+    except Exception as e:
+        logger.info("GPU not available (%s), using CPU ETKDG", e)
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="Train ADMET chirality models")
     parser.add_argument("--enriched", help="Path to enriched_pairs.json")
     parser.add_argument("--work-dir", default="admet_work", help="Output directory")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
     parser.add_argument("--nbits", type=int, default=128, help="Fingerprint bits")
+    parser.add_argument("--no-gpu", action="store_true", help="Disable GPU acceleration")
     parser.add_argument("--profile", help="Profile a molecule SMILES for ADMET")
     parser.add_argument(
         "--compare", nargs=2, metavar=("SMILES_A", "SMILES_B"),
         help="Differential ADMET between two enantiomers",
     )
     args = parser.parse_args()
+
+    if not args.no_gpu:
+        _enable_gpu()
 
     if args.profile:
         from zynerji_chirality.admet.profiler import ADMETProfiler

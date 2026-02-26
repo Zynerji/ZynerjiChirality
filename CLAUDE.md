@@ -6,6 +6,81 @@ Chirality detection via dual-helix spectral graph analysis. Detects whether a mo
 
 **Key insight**: Standard graph Laplacian eigenvalues are identical for enantiomers. The dual-helix Laplacian breaks this symmetry via phase modulation that depends on node ordering. CIP-priority canonical ordering with chirality-dependent cyclic shifts encodes handedness into the ordering, producing different spectral responses for R vs S.
 
+## Current Status (v0.6.0, 2026-02-25) — TARGET MODEL TRAINING COMPLETE ✓
+
+### Session 2026-02-25 — GPU Acceleration + Parallel Training — COMPLETE
+
+**All 986/986 target models trained.** Phase 1 done at 22:45 UTC, Phase 2 done at 23:19 UTC.
+
+**Problem solved**: Training pipeline was CPU-bound (eigsh ARPACK, CPU ETKDG hangs, GPU idle)
+
+**Fixes deployed to VM:**
+1. **`core/dual_helix.py`** — Replaced `scipy.sparse.linalg.eigsh` (ARPACK, 5-50ms) with:
+   - `numpy.linalg.eigh` (LAPACK) for n≤300 atoms (covers all drug-like molecules, ~0.05ms)
+   - `cupy.linalg.eigh` (cuSOLVER GPU) for n>300 atoms
+   - Vectorized `build_sparse_laplacian` (numpy vectorized, no Python for-loop)
+   - Result: 2.33ms/mol → **107 mol/s** effective fingerprint rate
+2. **`chirality/fingerprint.py`** — Added `_FP_CACHE: OrderedDict` (100K entries, keyed by (smiles, nbits))
+   - Cache lookup before any computation; store after projection
+   - Eliminates redundant cross-target fingerprinting
+   - 2D fast path: molecules with all stereocenters annotated in SMILES skip 3D embedding entirely
+3. **`scripts/train_target_models.py`** — Lowered GPU atom threshold from 80→30
+   - Molecules with ≥30 heavy atoms + unassigned stereocenters use CUDA DG (not CPU ETKDG)
+   - Eliminated 4-minute CPU ETKDG hangs for complex ring systems/macrocycles
+
+**Two-phase parallel training strategy (currently running):**
+- Problem: 8 CUDA contexts contend on 1 GPU → embeds take 6s instead of 0.6s
+- Solution: Pre-compute all FPs with 1 CUDA process, then 8 CPU-only workers train sklearn
+
+**Phase 1 — Pre-compute (COMPLETE 22:45 UTC):**
+- 101,278 SMILES fingerprinted in 5,770s at 17.6/mol/s, 0 failures
+- Output: `targets_work/fp_precomputed.pkl` (109MB)
+- Log: `targets_work/precompute.log`
+
+**Phase 2 — 8 CPU-only parallel workers (COMPLETE 23:19 UTC):**
+- All 986/986 target models trained (986 PKL files, done_targets.json reconciled)
+- Log: `targets_work/parallel_launcher.log`
+
+**New files (local + VM):**
+- `scripts/precompute_fingerprints.py` — Phase 1 pre-compute script
+- `scripts/parallel_train_targets.py` — Updated: Phase 1→2 orchestration, PKL reconciliation
+- `zynerji_chirality/targets/trainer.py` — Added `only_targets`, `precomputed_fps_path` params
+- `scripts/train_target_models.py` — Added `--precomputed-fps` arg
+
+**Training status (2026-02-26 session) — ALL COMPLETE:**
+- 986/986 per-target models: ✅ Done (Phase 2, 23:19 UTC Feb 25)
+- ADMET (metabolic_stability, cyp_inhibition, hERG): ✅ Done (00:45 UTC Feb 26, 2411.9s)
+- Global model (138K records, 3551 targets): ✅ Done (01:04 UTC Feb 26, **19.3s** with HistGBR)
+  - `targets_work/global_model.pkl` = 1.3 MB
+
+**Task #10 — Generative Optimization: COMPLETE (2026-02-26)**
+
+All three modes validated end-to-end with 986 target models + ADMET + 88K-molecule DB:
+
+1. **Single SMILES optimization**: S-ibuprofen (0.2019) > R-ibuprofen (0.2011) ✓
+2. **MMP flip analysis**: S-naproxen → no beneficial flips found ✓ (already optimal)
+3. **Batch filter+ranking**: 11 molecules → 18 (after stereo enumeration), correctly ranked:
+   - S/L enantiomers consistently outscore R/D counterparts
+   - Script: `scripts/chirality_optimize.py`
+   - Modes: `--smiles`, `--mmp`, `--filter`, `--input`
+
+**Dashboard**: Running on Vast.ai VM, port 8082
+- Access via: `ssh -i ~/.ssh/id_ed25519 -p 26375 -N -L 8082:localhost:8082 root@69.63.236.192`
+- Then open: http://localhost:8082
+- `enrich_progress.json` written to chembl_work/ (235,434 pairs, 83,801 enriched, 68,127 differential)
+
+**ALL TASKS COMPLETE.** Project ready for:
+- Paper/writeup on chirality-sensitive drug target findings
+- Deployment of dashboard to permanent host
+- Terminate Vast.ai VM when done to save budget
+
+**VM state (as of 2026-02-25 23:20 UTC):**
+- 986/986 target models trained: `targets_work/target_*.pkl`
+- `targets_work/done_targets.json` has 986 entries
+- `targets_work/target_datasets.json` has 986 eligible targets
+- `targets_work/fp_precomputed.pkl` = 109MB (complete)
+- GPU idle (0% util), no tmux sessions running
+
 ## Current Status (v0.5.0, 2026-02-24)
 
 **All core benchmarks passing — 100%:**
@@ -287,7 +362,7 @@ deploy/
 
 **Connection:**
 - SSH alias: `rtx6000` (configured in `~/.ssh/config`)
-- Host: `38.79.155.162`, Port: `61938`
+- Host: `69.63.236.192`, Port: `26375` (updated 2026-02-25; old 38.79.155.162:61938 is dead)
 - User: `root`
 - SSH key: `~/.ssh/id_ed25519`
 
@@ -295,13 +370,13 @@ deploy/
 # Connect
 ssh rtx6000
 # or explicit:
-ssh -i ~/.ssh/id_ed25519 -p 61938 root@38.79.155.162
+ssh -i ~/.ssh/id_ed25519 -p 26375 root@69.63.236.192
 
 # Copy files TO VM
-scp -i ~/.ssh/id_ed25519 -P 61938 local_file root@38.79.155.162:/opt/chirality/
+scp -i ~/.ssh/id_ed25519 -P 26375 local_file root@69.63.236.192:/opt/chirality/
 
 # Copy files FROM VM
-scp -i ~/.ssh/id_ed25519 -P 61938 root@38.79.155.162:/opt/chirality/chembl_work/chembl_screen.db .
+scp -i ~/.ssh/id_ed25519 -P 26375 root@69.63.236.192:/opt/chirality/chembl_work/chembl_screen.db .
 ```
 
 **Data paths on VM:**
@@ -310,8 +385,20 @@ scp -i ~/.ssh/id_ed25519 -P 61938 root@38.79.155.162:/opt/chirality/chembl_work/
 - DB: `/opt/chirality/chembl_work/chembl_screen.db`
 - CUDA module: `/opt/chirality/zynerji_chirality/cuda/`
 
-**tmux sessions:**
-- `gpu_bulk` — GPU fingerprinting of remaining molecules (cuda_retry.py)
+**tmux sessions (2026-02-26):**
+- `global` — Global model sklearn GBM training (138K × 4063 features, ~1-4 hrs)
+- `admet` — ADMET model training (cyp_inhibition + hERG, ~done)
+
+**Files added (2026-02-26):**
+- `scripts/expand_precomputed.py` — expands fp_precomputed.pkl with additional SMILES not in Phase 1
+- `targets_work/fp_precomputed.pkl` — **123.6 MB, 109,023 entries** (expanded from 101,278)
+- `admet_work/admet_*.pkl` — 3 ADMET models (metabolic_stability, cyp_inhibition, hERG)
+- `admet_work/training_report.json` — ADMET training summary
+
+**Patches applied on VM (NOT yet in local repo):**
+- `zynerji_chirality/chirality/fingerprint.py` line 35: `_FP_CACHE_MAX = 120_000` (was 100_000)
+- `zynerji_chirality/ml/base_model.py`: added `hist_gradient_boosting` model type → `HistGradientBoostingRegressor`
+- `zynerji_chirality/targets/global_model.py`: switched default from `gradient_boosting`→`hist_gradient_boosting`, `n_estimators`→`max_iter`
 
 **CUDA kernels deployed:**
 - Distance geometry (triangle smoothing, refinement, chirality volume constraint, pairwise distances)

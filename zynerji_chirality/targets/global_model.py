@@ -46,8 +46,8 @@ class GlobalChiralityPredictor(BaseChiralPredictor):
         **model_kwargs,
     ):
         defaults = {
-            "model_type": "gradient_boosting",
-            "n_estimators": 150,
+            "model_type": "hist_gradient_boosting",
+            "max_iter": 150,
             "max_depth": 4,
         }
         defaults.update(model_kwargs)

@@ -16,6 +16,22 @@ from scipy.sparse.linalg import eigsh
 
 PHI = (1.0 + np.sqrt(5.0)) / 2.0  # Golden ratio = 1.6180339887498949
 
+# GPU support: CuPy for cuSOLVER-accelerated eigendecomposition.
+# cupy.linalg.eigh (cuSOLVER dsyevd) is 10-100x faster than scipy eigsh
+# (ARPACK) for molecular Laplacians — especially on RTX 6000 Blackwell.
+_cupy = None
+try:
+    import cupy as cp
+    _cupy = cp
+except (ImportError, Exception):
+    pass
+
+# Dense CPU threshold: for n <= this, use numpy.linalg.eigh (LAPACK dsyev).
+# ARPACK has ~5-50ms fixed Python overhead per call regardless of matrix size.
+# LAPACK on a 100x100 matrix takes ~0.05ms — 100-1000x faster for small mols.
+# Threshold of 300 covers essentially all drug-like molecules from ChEMBL.
+_DENSE_CPU_N = 300
+
 
 @dataclass
 class HelixParams:
@@ -69,39 +85,35 @@ def build_sparse_laplacian(
     coupling = PHI if handedness >= 0 else PHI * PHI
     phase_fn = np.cos if handedness >= 0 else np.sin
 
-    # Extract non-zero entries from upper triangle
+    # Vectorized upper-triangle extraction (avoids Python for-loop overhead)
     adj_coo = adj.tocoo()
-    rows_out = []
-    cols_out = []
-    vals_out = []
+    mask = adj_coo.row < adj_coo.col
+    u = adj_coo.row[mask]
+    v = adj_coo.col[mask]
+    w_orig = adj_coo.data[mask]
+
+    if len(u) == 0:
+        return diags(np.zeros(n), format="csr")
+
+    # Phase differences with Mobius twist for topologically distant pairs
+    delta = theta[u] - theta[v]
+    twist_mask = np.abs(u - v) > n * params.twist_fraction
+    delta[twist_mask] += np.pi
+
+    w = phase_fn(params.omega * delta) * w_orig * coupling
+
+    # Build symmetric adjacency
+    rows_out = np.concatenate([u, v])
+    cols_out = np.concatenate([v, u])
+    vals_out = np.concatenate([w, w])
+    A_helix = csr_matrix((vals_out, (rows_out, cols_out)), shape=(n, n))
+
+    # Degrees: use |w| to ensure L is PSD (signed Laplacian)
     degrees = np.zeros(n, dtype=np.float64)
+    np.add.at(degrees, u, np.abs(w))
+    np.add.at(degrees, v, np.abs(w))
 
-    for u, v, w_orig in zip(adj_coo.row, adj_coo.col, adj_coo.data):
-        if u >= v:
-            continue  # Upper triangle only to avoid double-counting
-
-        delta = theta[u] - theta[v]
-        # Mobius twist for topologically distant pairs
-        if abs(u - v) > n * params.twist_fraction:
-            delta += np.pi
-
-        w = phase_fn(params.omega * delta) * w_orig * coupling
-        # Keep ALL edges (signed Laplacian): use |w| for degree to
-        # ensure L is positive semi-definite, preserving the sign in
-        # the adjacency. Without this, the sin helix drops most edges
-        # (sin < 0 for monotonic theta), creating disconnected graphs
-        # with degenerate zero eigenvalues.
-        rows_out.extend([u, v])
-        cols_out.extend([v, u])
-        vals_out.extend([w, w])
-        degrees[u] += abs(w)
-        degrees[v] += abs(w)
-
-    A_helix = csr_matrix(
-        (vals_out, (rows_out, cols_out)), shape=(n, n)
-    )
-    L = diags(degrees, format="csr") - A_helix
-    return L
+    return diags(degrees, format="csr") - A_helix
 
 
 def build_standard_laplacian(adj: csr_matrix, normalized: bool = False) -> csr_matrix:
@@ -124,24 +136,24 @@ def build_standard_laplacian(adj: csr_matrix, normalized: bool = False) -> csr_m
     if n == 0:
         return csr_matrix((0, 0))
 
-    # Symmetrize (take upper triangle, mirror)
+    # Vectorized upper-triangle extraction
     adj_coo = adj.tocoo()
-    rows_out = []
-    cols_out = []
-    vals_out = []
-    degrees = np.zeros(n, dtype=np.float64)
+    mask = adj_coo.row < adj_coo.col
+    u = adj_coo.row[mask]
+    v = adj_coo.col[mask]
+    w = adj_coo.data[mask]
 
-    for u, v, w in zip(adj_coo.row, adj_coo.col, adj_coo.data):
-        if u >= v:
-            continue
-        rows_out.extend([u, v])
-        cols_out.extend([v, u])
-        vals_out.extend([w, w])
-        # Use |w| for degree to ensure L is PSD (signed Laplacian theory)
-        degrees[u] += abs(w)
-        degrees[v] += abs(w)
+    if len(u) == 0:
+        return diags(np.zeros(n), format="csr")
 
+    rows_out = np.concatenate([u, v])
+    cols_out = np.concatenate([v, u])
+    vals_out = np.concatenate([w, w])
     A = csr_matrix((vals_out, (rows_out, cols_out)), shape=(n, n))
+
+    degrees = np.zeros(n, dtype=np.float64)
+    np.add.at(degrees, u, np.abs(w))
+    np.add.at(degrees, v, np.abs(w))
 
     if normalized:
         # L_sym = I - D^{-1/2} A D^{-1/2}
@@ -155,6 +167,28 @@ def build_standard_laplacian(adj: csr_matrix, normalized: bool = False) -> csr_m
     return diags(degrees, format="csr") - A
 
 
+def _eigh_best(L: csr_matrix, n: int) -> tuple[np.ndarray, np.ndarray]:
+    """Compute ALL eigenvalues/vectors of L using the best available method.
+
+    Priority:
+      1. GPU (CuPy cuSOLVER) for n > _DENSE_CPU_N — fastest on Blackwell
+      2. CPU dense (numpy LAPACK) for n <= _DENSE_CPU_N — fast for small mols
+      3. CPU dense fallback when GPU fails
+
+    Returns sorted (eigenvalues[n], eigenvectors[n, n]).
+    """
+    if n <= _DENSE_CPU_N or _cupy is None:
+        return np.linalg.eigh(L.toarray())
+
+    # GPU path: transfer to GPU, decompose with cuSOLVER, transfer back
+    try:
+        L_gpu = _cupy.asarray(L.toarray())
+        evals_gpu, evecs_gpu = _cupy.linalg.eigh(L_gpu)
+        return _cupy.asnumpy(evals_gpu), _cupy.asnumpy(evecs_gpu)
+    except Exception:
+        return np.linalg.eigh(L.toarray())
+
+
 def _compute_eigenvectors(
     L: csr_matrix,
     k: int,
@@ -163,31 +197,31 @@ def _compute_eigenvectors(
 
     Returns (eigenvalues[k], eigenvectors[n, k]).
     Skips the trivial zero eigenvalue (index 0).
+
+    Uses GPU (cuSOLVER) or dense numpy (LAPACK) for n <= 300 — orders of
+    magnitude faster than scipy eigsh (ARPACK) for typical drug molecules.
     """
     n = L.shape[0]
     if n == 0:
         return np.array([]), np.zeros((0, 0))
 
-    # Number of eigenvectors to request (k useful + 1 trivial)
-    num_request = min(k + 1, n)
-
-    if n < 10:
-        # Dense fallback for tiny matrices
-        evals, evecs = np.linalg.eigh(L.toarray())
+    if n <= _DENSE_CPU_N or _cupy is not None:
+        # Dense path: GPU (n > threshold) or CPU numpy (n <= threshold)
+        evals, evecs = _eigh_best(L, n)
         idx = np.argsort(evals)
         start = min(1, n - 1)
         end = min(start + k, n)
         return evals[idx[start:end]], evecs[:, idx[start:end]]
 
+    # Sparse ARPACK path: only for large molecules without GPU
+    num_request = min(k + 1, n)
     try:
         evals, evecs = eigsh(L, k=num_request, which="SM", tol=1e-8, maxiter=2000)
         idx = np.argsort(evals)
-        # Skip index 0 (trivial zero eigenvalue)
         start = min(1, len(idx) - 1)
         end = min(start + k, len(idx))
         return evals[idx[start:end]], evecs[:, idx[start:end]]
     except Exception:
-        # Dense fallback
         evals, evecs = np.linalg.eigh(L.toarray())
         idx = np.argsort(evals)
         start = min(1, n - 1)
@@ -237,11 +271,11 @@ def _compute_eigenvectors_golden(
     if n == 0:
         return np.array([]), np.zeros((0, 0))
 
-    # Compute all eigenvectors (or as many as we can)
-    if n < 50:
-        evals, evecs = np.linalg.eigh(L.toarray())
+    if n <= _DENSE_CPU_N or _cupy is not None:
+        # Dense path: all eigenvalues (GPU or CPU LAPACK)
+        evals, evecs = _eigh_best(L, n)
     else:
-        # Request more eigenvectors than we need, then select
+        # Sparse ARPACK: request more than needed, then select
         n_request = min(max(3 * k, 20), n)
         try:
             evals, evecs = eigsh(L, k=n_request, which="SM", tol=1e-8, maxiter=2000)

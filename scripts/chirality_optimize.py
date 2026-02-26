@@ -49,6 +49,20 @@ def _build_scorer(args):
     )
 
 
+def _enable_gpu():
+    """Try to enable CUDA pipeline for GPU-accelerated 3D embedding."""
+    try:
+        from zynerji_chirality.cuda.pipeline import CUDAConformerPipeline
+        from zynerji_chirality.core.mol_graph import set_cuda_pipeline
+        pipeline = CUDAConformerPipeline(device=0)
+        set_cuda_pipeline(pipeline)
+        logger.info("GPU acceleration ENABLED (CUDA conformer pipeline)")
+        return True
+    except Exception as e:
+        logger.info("GPU not available (%s), using CPU ETKDG", e)
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="Chirality-aware molecular optimization")
     parser.add_argument("--smiles", help="Single SMILES to optimize")
@@ -62,7 +76,11 @@ def main():
     parser.add_argument("--admet-models-dir", help="ADMET models directory")
     parser.add_argument("--max-iterations", type=int, default=5)
     parser.add_argument("--min-score", type=float, default=0.0)
+    parser.add_argument("--no-gpu", action="store_true", help="Disable GPU acceleration")
     args = parser.parse_args()
+
+    if not args.no_gpu:
+        _enable_gpu()
 
     scorer = _build_scorer(args)
 
