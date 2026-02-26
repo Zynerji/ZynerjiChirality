@@ -61,6 +61,21 @@ def create_app(
 
     app.add_middleware(NoCacheMiddleware)
 
+    # Serve static files (whitepaper PDF, etc.) if directory exists
+    _static_candidates = [
+        Path("/opt/chirality/static"),
+        Path(work_dir).parent / "static",
+        Path("static"),
+    ]
+    for _sd in _static_candidates:
+        if _sd.exists():
+            try:
+                from fastapi.staticfiles import StaticFiles
+                app.mount("/static", StaticFiles(directory=str(_sd)), name="static")
+            except Exception:
+                pass
+            break
+
     # Cache for expensive JSON loads: {filename: (mtime, data)}
     _json_cache: dict[str, tuple[float, any]] = {}
 
@@ -647,7 +662,7 @@ h1 {
     font-size: 20px;
     margin-bottom: 4px;
 }
-.subtitle { color: #888; font-size: 12px; margin-bottom: 16px; }
+.subtitle { color: #888; font-size: 12px; margin-bottom: 8px; }
 .grid { display: grid; gap: 12px; margin-bottom: 12px; }
 .grid-3 { grid-template-columns: repeat(3, 1fr); }
 .grid-2 { grid-template-columns: repeat(2, 1fr); }
@@ -813,14 +828,83 @@ tr:hover td { background: #1a1a28; }
 .fold-high { background: #ff444433; color: #ff4444; }
 .fold-med { background: #ffaa0033; color: #ffaa00; }
 .fold-low { background: #00ff8833; color: #888; }
+/* Hero section */
+.hero-card {
+    background: #0d1117;
+    border: 1px solid #00d4ff33;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+}
+.hero-title { color: #00d4ff; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+.hero-sub { color: #aaa; font-size: 12px; line-height: 1.6; margin-bottom: 10px; }
+.hero-footer { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+details.how-works summary { color: #00d4ff88; font-size: 11px; cursor: pointer; user-select: none; }
+details.how-works summary:hover { color: #00d4ff; }
+details.how-works p { color: #666; font-size: 11px; margin-top: 6px; line-height: 1.5; padding-left: 8px; border-left: 2px solid #1e1e2e; }
+.pdf-link { color: #00d4ff88; font-size: 11px; text-decoration: none; }
+.pdf-link:hover { color: #00d4ff; }
+/* Explainer card */
+.explainer {
+    background: #0d1117;
+    border: 1px solid #1e1e2e;
+    border-left: 3px solid #00d4ff;
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    font-size: 12px;
+}
+.explainer-title { color: #00d4ff; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
+.explainer-row { display: flex; gap: 8px; margin-bottom: 6px; line-height: 1.5; }
+.explainer-key { color: #00d4ff88; min-width: 80px; font-size: 11px; padding-top: 1px; }
+.explainer-val { color: #aaa; }
+.explainer-val code { color: #00ff88; background: #0a1a0a; padding: 1px 4px; border-radius: 3px; font-family: inherit; font-size: 11px; }
+/* Form rows */
+.form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.form-label { color: #888; font-size: 11px; }
+.form-row input { background: #1e1e2e; border: 1px solid #2e2e3e; color: #e0e0e0; padding: 8px 12px; border-radius: 6px; font-family: inherit; font-size: 13px; }
+.form-row input:focus { outline: none; border-color: #00d4ff; }
+.form-row input.input-error { border-color: #ff4444 !important; }
+.form-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; margin-bottom: 14px; }
+.search-box input.input-error { border-color: #ff4444 !important; }
+/* Try-example button */
+.try-btn {
+    background: transparent !important;
+    border: 1px solid #333 !important;
+    color: #666 !important;
+    font-size: 11px !important;
+    padding: 4px 10px !important;
+    cursor: pointer;
+    border-radius: 4px;
+}
+.try-btn:hover { color: #aaa !important; border-color: #555 !important; }
+/* Tab bar wraps on small screens */
+.tab-bar { flex-wrap: wrap; }
+.search-box { flex-wrap: wrap; }
+.search-box input { min-width: 180px; }
 </style>
 </head>
 <body>
 <h1>ZynerjiChirality</h1>
-<div class="subtitle">Enantiomer Screening Pipeline &mdash; <span id="status">loading...</span></div>
+
+<!-- Hero section -->
+<div class="hero-card">
+    <div class="hero-title">ZynerjiChirality v0.6.0 &mdash; Spectral Chirality Analysis Engine</div>
+    <div class="hero-sub">Predict how R/S stereochemistry affects drug targets, ADMET, and catalytic selectivity<br>across 986 trained target models and 3 ADMET predictors.</div>
+    <div class="hero-footer">
+        <details class="how-works">
+            <summary>How it works</summary>
+            <p>Each molecule is converted to a dual-helix Laplacian spectral fingerprint (128-bit) via CIP-canonical phase-modulated graph analysis. The fingerprint is scored by 986 per-target sklearn models trained on ChEMBL differential activity data, plus a global HistGBM and 3 ADMET regressors.</p>
+        </details>
+        <a href="static/whitepaper_v060.pdf" target="_blank" class="pdf-link">&#x1F4C4; Whitepaper v0.6.0</a>
+        <span id="status" style="color:#444;font-size:11px">loading...</span>
+    </div>
+</div>
+
+<!-- Enrichment progress bar -->
 <div id="enrich-bar-wrap" style="margin:10px 0;display:none">
     <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
-        <span style="color:#ffaa00">Enrichment</span>
+        <span style="color:#ffaa00">ChEMBL Enrichment</span>
         <span id="enrich-pct" style="color:#ffaa00">0%</span>
     </div>
     <div style="height:10px;background:#1e1e2e;border-radius:5px;overflow:hidden">
@@ -830,181 +914,52 @@ tr:hover td { background: #1a1a28; }
 </div>
 <div id="refresh-indicator"></div>
 
-<!-- Stats Cards -->
-<div class="grid grid-3" id="stats-grid">
-    <div class="card">
-        <div class="card-title">Pipeline</div>
-        <div id="pipeline-stats">Loading...</div>
-    </div>
-    <div class="card">
-        <div class="card-title">Discovery</div>
-        <div id="discovery-stats">Loading...</div>
-    </div>
-    <div class="card">
-        <div class="card-title">Screening</div>
-        <div id="screening-stats">Loading...</div>
-    </div>
-</div>
-
-<!-- Progress Bars -->
-<div class="grid grid-1">
-    <div class="card">
-        <div class="card-title">Breakdown</div>
-        <div id="bars-container"></div>
-    </div>
-</div>
-
-<!-- Tabs -->
+<!-- Tabs: interactive tools first, monitoring last -->
 <div class="tab-bar">
-    <button class="tab active" onclick="switchTab('hits')">Screening Hits</button>
-    <button class="tab" onclick="switchTab('pairs')">Enantiomer Pairs</button>
-    <button class="tab" onclick="switchTab('differential')">Differential Activity</button>
+    <button class="tab active" onclick="switchTab('profiler')">Molecule Profiler</button>
+    <button class="tab" onclick="switchTab('admet')">ADMET</button>
+    <button class="tab" onclick="switchTab('generative')">Generative</button>
     <button class="tab" onclick="switchTab('search')">Search</button>
     <button class="tab" onclick="switchTab('materials')">Materials</button>
     <button class="tab" onclick="switchTab('catalysts')">Catalysts</button>
-    <button class="tab" onclick="switchTab('cod')">COD Pipeline</button>
-    <button class="tab" onclick="switchTab('ord')">ORD Pipeline</button>
-    <button class="tab" onclick="switchTab('targets')">Target Models</button>
-    <button class="tab" onclick="switchTab('admet')">ADMET</button>
-    <button class="tab" onclick="switchTab('generative')">Generative</button>
+    <button class="tab" onclick="switchTab('hits')">Screening Hits</button>
+    <button class="tab" onclick="switchTab('differential')">Differential Activity</button>
+    <button class="tab" onclick="switchTab('pairs')">Enantiomer Pairs</button>
+    <button class="tab" onclick="switchTab('pipeline')">Pipeline Status</button>
 </div>
 
-<!-- Tab Content: Hits -->
-<div class="tab-content active" id="tab-hits">
-    <div class="card">
-        <table>
-            <thead>
-                <tr>
-                    <th>Type</th>
-                    <th>Priority</th>
-                    <th>Mol A</th>
-                    <th>Mol B</th>
-                    <th>Relationship</th>
-                    <th>Description</th>
-                </tr>
-            </thead>
-            <tbody id="hits-table"></tbody>
-        </table>
+<!-- Tab: Molecule Profiler -->
+<div class="tab-content active" id="tab-profiler">
+    <div class="explainer">
+        <div class="explainer-title">Molecule Profiler &mdash; Rank 986 drug targets by chirality sensitivity</div>
+        <div class="explainer-row">
+            <span class="explainer-key">What to input</span>
+            <span class="explainer-val">Two SMILES strings representing an enantiomer pair (R and S forms, or any diastereomer pair)</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">What you'll get</span>
+            <span class="explainer-val">Ranked table of 986 drug targets showing predicted fold-change sensitivity; flags targets where chirality matters (&gt;3x)</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">How it works</span>
+            <span class="explainer-val">Each SMILES pair is fingerprinted with the dual-helix spectral engine and run through 986 per-target sklearn models + global HistGBM</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">Example</span>
+            <span class="explainer-val">A: <code>C[C@@H](O)c1ccccc1</code>&nbsp;&nbsp;B: <code>C[C@H](O)c1ccccc1</code></span>
+        </div>
     </div>
-</div>
-
-<!-- Tab Content: Pairs -->
-<div class="tab-content" id="tab-pairs">
-    <div class="card">
-        <table>
-            <thead>
-                <tr>
-                    <th>Mol A</th>
-                    <th>SMILES A</th>
-                    <th>Mol B</th>
-                    <th>SMILES B</th>
-                    <th>Type</th>
-                    <th>Centers</th>
-                </tr>
-            </thead>
-            <tbody id="pairs-table"></tbody>
-        </table>
+    <div class="form-row">
+        <span class="form-label">First enantiomer (e.g. R-form)</span>
+        <input type="text" id="tgt-smiles-a" placeholder="e.g. C[C@@H](O)c1ccccc1" />
     </div>
-</div>
-
-<!-- Tab Content: Differential -->
-<div class="tab-content" id="tab-differential">
-    <div class="card">
-        <table>
-            <thead>
-                <tr>
-                    <th>Mol A</th>
-                    <th>Mol B</th>
-                    <th>Target</th>
-                    <th>Type</th>
-                    <th>Value A</th>
-                    <th>Value B</th>
-                    <th>Fold Change</th>
-                </tr>
-            </thead>
-            <tbody id="diff-table"></tbody>
-        </table>
+    <div class="form-row">
+        <span class="form-label">Second enantiomer (e.g. S-form)</span>
+        <input type="text" id="tgt-smiles-b" placeholder="e.g. C[C@H](O)c1ccccc1" />
     </div>
-</div>
-
-<!-- Tab Content: Search -->
-<div class="tab-content" id="tab-search">
-    <div class="search-box">
-        <input type="text" id="search-smiles" placeholder="Enter SMILES (e.g. N[C@@H](C)C(=O)O)" />
-        <select id="search-mode">
-            <option value="similar">Similar</option>
-            <option value="enantiomer">Enantiomer</option>
-        </select>
-        <button onclick="doSearch()">Search</button>
-    </div>
-    <div class="card">
-        <table>
-            <thead>
-                <tr>
-                    <th>Rank</th>
-                    <th>Name</th>
-                    <th>SMILES</th>
-                    <th>Similarity</th>
-                    <th>Chirality Score</th>
-                    <th>Sign</th>
-                </tr>
-            </thead>
-            <tbody id="search-results"></tbody>
-        </table>
-    </div>
-</div>
-
-<!-- Tab Content: Materials -->
-<div class="tab-content" id="tab-materials">
-    <div class="search-box">
-        <input type="text" id="mat-smiles" placeholder="Enter SMILES (e.g. N[C@@H](C)C(=O)O)" />
-        <button onclick="doMaterialAnalysis()">Analyze Material</button>
-    </div>
-    <div class="card" id="mat-results" style="display:none">
-        <div class="card-title">Material Chirality Analysis</div>
-        <div id="mat-results-body"></div>
-    </div>
-</div>
-
-<!-- Tab Content: COD Pipeline -->
-<div class="tab-content" id="tab-cod">
-    <div class="card">
-        <div class="card-title">COD Crystal Structure Pipeline</div>
-        <div id="cod-body"><div style="color:#888">Loading...</div></div>
-    </div>
-</div>
-
-<!-- Tab Content: ORD Pipeline -->
-<div class="tab-content" id="tab-ord">
-    <div class="card">
-        <div class="card-title">ORD Enantioselectivity Pipeline</div>
-        <div id="ord-body"><div style="color:#888">Loading...</div></div>
-    </div>
-</div>
-
-<!-- Tab Content: Catalysts -->
-<div class="tab-content" id="tab-catalysts">
-    <div class="search-box">
-        <input type="text" id="cat-catalyst" placeholder="Catalyst SMILES" style="flex:1" />
-        <input type="text" id="cat-substrate" placeholder="Substrate SMILES" style="flex:1" />
-        <button onclick="doCatalystPredict()">Predict ee</button>
-    </div>
-    <div class="card" id="cat-results" style="display:none">
-        <div class="card-title">Enantioselectivity Prediction</div>
-        <div id="cat-results-body"></div>
-    </div>
-</div>
-
-<!-- Tab Content: Target Models -->
-<div class="tab-content" id="tab-targets">
-    <div class="search-box">
-        <input type="text" id="tgt-smiles-a" placeholder="Enantiomer A SMILES" style="flex:1" />
-        <input type="text" id="tgt-smiles-b" placeholder="Enantiomer B SMILES" style="flex:1" />
-        <button onclick="doTargetProfile()">Profile Targets</button>
-    </div>
-    <div class="card">
-        <div class="card-title">Target Models Status</div>
-        <div id="targets-status"><div style="color:#888">Loading...</div></div>
+    <div class="form-actions">
+        <button onclick="doTargetProfile(event)">Profile Targets</button>
+        <button class="try-btn" onclick="tryProfilerExample()">Try example</button>
     </div>
     <div class="card" id="tgt-results" style="display:none;margin-top:12px">
         <div class="card-title">Target Sensitivity Profile</div>
@@ -1012,20 +967,46 @@ tr:hover td { background: #1a1a28; }
     </div>
 </div>
 
-<!-- Tab Content: ADMET -->
+<!-- Tab: ADMET -->
 <div class="tab-content" id="tab-admet">
-    <div class="search-box">
-        <input type="text" id="admet-smiles" placeholder="SMILES for ADMET profile" style="flex:2" />
-        <button onclick="doADMETProfile()">Profile</button>
+    <div class="explainer">
+        <div class="explainer-title">ADMET &mdash; Metabolic stability, CYP inhibition, hERG cardiac risk</div>
+        <div class="explainer-row">
+            <span class="explainer-key">Profile</span>
+            <span class="explainer-val">Single SMILES &rarr; metabolic stability, CYP inhibition, hERG risk table (high/moderate/low)</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">Compare</span>
+            <span class="explainer-val">Two enantiomer SMILES &rarr; shows where chirality diverges ADMET properties with fold-difference</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">How it works</span>
+            <span class="explainer-val">Spectral chirality fingerprint fed into 3 sklearn regressors trained on known ADMET data</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">Example</span>
+            <span class="explainer-val"><code>CC(=O)Oc1ccccc1C(=O)O</code> (aspirin)</span>
+        </div>
     </div>
-    <div class="search-box">
-        <input type="text" id="admet-a" placeholder="Enantiomer A SMILES" style="flex:1" />
-        <input type="text" id="admet-b" placeholder="Enantiomer B SMILES" style="flex:1" />
-        <button onclick="doADMETCompare()">Compare</button>
+    <div class="form-row">
+        <span class="form-label">Single molecule ADMET profile</span>
+        <input type="text" id="admet-smiles" placeholder="e.g. CC(=O)Oc1ccccc1C(=O)O" />
     </div>
-    <div class="card">
-        <div class="card-title">ADMET Models Status</div>
-        <div id="admet-status"><div style="color:#888">Loading...</div></div>
+    <div class="form-actions">
+        <button onclick="doADMETProfile(event)">Profile</button>
+        <button class="try-btn" onclick="tryAdmetProfileExample()">Try example</button>
+    </div>
+    <div class="form-row">
+        <span class="form-label">Enantiomer A SMILES (R-form)</span>
+        <input type="text" id="admet-a" placeholder="e.g. C[C@@H](O)c1ccccc1" />
+    </div>
+    <div class="form-row">
+        <span class="form-label">Enantiomer B SMILES (S-form)</span>
+        <input type="text" id="admet-b" placeholder="e.g. C[C@H](O)c1ccccc1" />
+    </div>
+    <div class="form-actions">
+        <button onclick="doADMETCompare(event)">Compare Enantiomers</button>
+        <button class="try-btn" onclick="tryAdmetCompareExample()">Try example</button>
     </div>
     <div class="card" id="admet-results" style="display:none;margin-top:12px">
         <div class="card-title">ADMET Profile</div>
@@ -1035,18 +1016,236 @@ tr:hover td { background: #1a1a28; }
         <div class="card-title">Differential ADMET</div>
         <div id="admet-compare-body"></div>
     </div>
+    <div class="card" style="margin-top:12px">
+        <div class="card-title">ADMET Models Status</div>
+        <div id="admet-status"><div style="color:#888">Loading...</div></div>
+    </div>
 </div>
 
-<!-- Tab Content: Generative -->
+<!-- Tab: Generative -->
 <div class="tab-content" id="tab-generative">
-    <div class="search-box">
-        <input type="text" id="gen-smiles" placeholder="SMILES to optimize" style="flex:2" />
-        <button onclick="doOptimize()">Optimize</button>
-        <button onclick="doEnumerate()">Enumerate</button>
+    <div class="explainer">
+        <div class="explainer-title">Generative &mdash; Optimize or enumerate stereoisomers</div>
+        <div class="explainer-row">
+            <span class="explainer-key">What to input</span>
+            <span class="explainer-val">Any SMILES with one or more stereocenters</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">Optimize</span>
+            <span class="explainer-val">Best-scoring stereoisomer from iterative flipping &mdash; returns ranked variant table</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">Enumerate</span>
+            <span class="explainer-val">All possible stereoisomers ranked by chirality score</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">How it works</span>
+            <span class="explainer-val">Enumerates R/S combinations at each stereocenter, scores each via target profiler + ADMET</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">Example</span>
+            <span class="explainer-val"><code>CC(N)Cc1ccccc1</code> (amphetamine)</span>
+        </div>
     </div>
-    <div class="card" id="gen-results" style="display:none">
+    <div class="form-row">
+        <span class="form-label">SMILES with stereocenters</span>
+        <input type="text" id="gen-smiles" placeholder="e.g. CC(N)Cc1ccccc1" />
+    </div>
+    <div class="form-actions">
+        <button onclick="doOptimize(event)">Optimize</button>
+        <button onclick="doEnumerate(event)">Enumerate All</button>
+        <button class="try-btn" onclick="tryGenerativeExample()">Try example</button>
+    </div>
+    <div class="card" id="gen-results" style="display:none;margin-top:12px">
         <div class="card-title">Optimization / Enumeration Results</div>
         <div id="gen-results-body"></div>
+    </div>
+</div>
+
+<!-- Tab: Search -->
+<div class="tab-content" id="tab-search">
+    <div class="explainer">
+        <div class="explainer-title">Search &mdash; Fingerprint similarity search across 88K molecules</div>
+        <div class="explainer-row">
+            <span class="explainer-key">What to input</span>
+            <span class="explainer-val">SMILES + mode: <em>Similar</em> (structurally similar chiral molecules) or <em>Enantiomer</em> (mirror image search)</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">What you'll get</span>
+            <span class="explainer-val">Top-20 ranked molecules from 88K-molecule fingerprint database, with similarity scores</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">How it works</span>
+            <span class="explainer-val">Cosine k-NN on 128-bit spectral fingerprint vectors stored in SQLite</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">Example</span>
+            <span class="explainer-val"><code>CC(C)Cc1ccc(cc1)C(C)C(=O)O</code> (ibuprofen)</span>
+        </div>
+    </div>
+    <div class="search-box">
+        <input type="text" id="search-smiles" placeholder="e.g. CC(C)Cc1ccc(cc1)C(C)C(=O)O" />
+        <select id="search-mode">
+            <option value="similar">Similar</option>
+            <option value="enantiomer">Enantiomer</option>
+        </select>
+        <button onclick="doSearch()">Search</button>
+        <button class="try-btn" onclick="trySearchExample()">Try example</button>
+    </div>
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>Rank</th><th>Name</th><th>SMILES</th><th>Similarity</th><th>Chirality Score</th><th>Sign</th>
+                </tr>
+            </thead>
+            <tbody id="search-results"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Tab: Materials -->
+<div class="tab-content" id="tab-materials">
+    <div class="explainer">
+        <div class="explainer-title">Materials &mdash; CD activity, CISS spin-selectivity, optical rotation</div>
+        <div class="explainer-row">
+            <span class="explainer-key">What to input</span>
+            <span class="explainer-val">SMILES of a molecular material</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">What you'll get</span>
+            <span class="explainer-val">CD activity, CISS spin-selectivity score, optical rotation, band-gap shift</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">How it works</span>
+            <span class="explainer-val">Dual-helix spectral analysis on the molecular graph without CIP ordering constraints</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">Example</span>
+            <span class="explainer-val"><code>C1=CC2=CC=CC3=CC=CC1=C23</code> (triphenylene)</span>
+        </div>
+    </div>
+    <div class="search-box">
+        <input type="text" id="mat-smiles" placeholder="e.g. C1=CC2=CC=CC3=CC=CC1=C23" />
+        <button onclick="doMaterialAnalysis(event)">Analyze Material</button>
+        <button class="try-btn" onclick="tryMaterialsExample()">Try example</button>
+    </div>
+    <div class="card" id="mat-results" style="display:none">
+        <div class="card-title">Material Chirality Analysis</div>
+        <div id="mat-results-body"></div>
+    </div>
+</div>
+
+<!-- Tab: Catalysts -->
+<div class="tab-content" id="tab-catalysts">
+    <div class="explainer">
+        <div class="explainer-title">Catalysts &mdash; Predict enantioselectivity (ee%) from catalyst + substrate</div>
+        <div class="explainer-row">
+            <span class="explainer-key">What to input</span>
+            <span class="explainer-val">Catalyst SMILES + Substrate SMILES</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">What you'll get</span>
+            <span class="explainer-val">Predicted enantiomeric excess (ee%), major enantiomer (R/S), confidence</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">How it works</span>
+            <span class="explainer-val">Combined fingerprint [cat_fp, sub_fp, cat&times;sub, |cat&minus;sub|] fed into sklearn regressor</span>
+        </div>
+        <div class="explainer-row">
+            <span class="explainer-key">Example cat.</span>
+            <span class="explainer-val"><code>c1ccc2c(c1)-c1ccccc1C2(P(c1ccccc1)c1ccccc1)</code> (BINAP fragment)</span>
+        </div>
+    </div>
+    <div class="form-row">
+        <span class="form-label">Catalyst SMILES</span>
+        <input type="text" id="cat-catalyst" placeholder="e.g. c1ccc2c(c1)-c1ccccc1C2(P(c1ccccc1)c1ccccc1)" />
+    </div>
+    <div class="form-row">
+        <span class="form-label">Substrate SMILES</span>
+        <input type="text" id="cat-substrate" placeholder="e.g. O=C(O)C(Cc1ccccc1)N" />
+    </div>
+    <div class="form-actions">
+        <button onclick="doCatalystPredict(event)">Predict ee%</button>
+        <button class="try-btn" onclick="tryCatalystExample()">Try example</button>
+    </div>
+    <div class="card" id="cat-results" style="display:none;margin-top:12px">
+        <div class="card-title">Enantioselectivity Prediction</div>
+        <div id="cat-results-body"></div>
+    </div>
+</div>
+
+<!-- Tab: Screening Hits -->
+<div class="tab-content" id="tab-hits">
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>Type</th><th>Priority</th><th>Mol A</th><th>Mol B</th><th>Relationship</th><th>Description</th>
+                </tr>
+            </thead>
+            <tbody id="hits-table"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Tab: Differential Activity -->
+<div class="tab-content" id="tab-differential">
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>Mol A</th><th>Mol B</th><th>Target</th><th>Type</th><th>Value A</th><th>Value B</th><th>Fold Change</th>
+                </tr>
+            </thead>
+            <tbody id="diff-table"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Tab: Enantiomer Pairs -->
+<div class="tab-content" id="tab-pairs">
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>Mol A</th><th>SMILES A</th><th>Mol B</th><th>SMILES B</th><th>Type</th><th>Centers</th>
+                </tr>
+            </thead>
+            <tbody id="pairs-table"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Tab: Pipeline Status (consolidated monitoring) -->
+<div class="tab-content" id="tab-pipeline">
+    <div class="grid grid-3" id="stats-grid">
+        <div class="card">
+            <div class="card-title">Pipeline</div>
+            <div id="pipeline-stats">Loading...</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Discovery</div>
+            <div id="discovery-stats">Loading...</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Screening</div>
+            <div id="screening-stats">Loading...</div>
+        </div>
+    </div>
+    <div class="grid grid-1">
+        <div class="card">
+            <div class="card-title">Breakdown</div>
+            <div id="bars-container"></div>
+        </div>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+        <div class="card-title">COD Crystal Structure Pipeline</div>
+        <div id="cod-body"><div style="color:#888">Loading...</div></div>
+    </div>
+    <div class="card">
+        <div class="card-title">ORD Enantioselectivity Pipeline</div>
+        <div id="ord-body"><div style="color:#888">Loading...</div></div>
     </div>
 </div>
 
@@ -1096,6 +1295,35 @@ async function fetchJSON(endpoint) {
     } catch(e) { return null; }
 }
 
+function setLoading(btn, isLoading, originalText) {
+    if (!btn) return;
+    btn.disabled = isLoading;
+    btn.textContent = isLoading ? 'Analyzing...' : originalText;
+}
+
+function markError(inputId) {
+    const el = document.getElementById(inputId);
+    if (el) { el.classList.add('input-error'); setTimeout(() => el.classList.remove('input-error'), 3000); }
+}
+
+// Try-example helpers
+function tryProfilerExample() {
+    document.getElementById('tgt-smiles-a').value = 'C[C@@H](O)c1ccccc1';
+    document.getElementById('tgt-smiles-b').value = 'C[C@H](O)c1ccccc1';
+}
+function tryAdmetProfileExample() { document.getElementById('admet-smiles').value = 'CC(=O)Oc1ccccc1C(=O)O'; }
+function tryAdmetCompareExample() {
+    document.getElementById('admet-a').value = 'C[C@@H](O)c1ccccc1';
+    document.getElementById('admet-b').value = 'C[C@H](O)c1ccccc1';
+}
+function tryGenerativeExample() { document.getElementById('gen-smiles').value = 'CC(N)Cc1ccccc1'; }
+function trySearchExample() { document.getElementById('search-smiles').value = 'CC(C)Cc1ccc(cc1)C(C)C(=O)O'; }
+function tryMaterialsExample() { document.getElementById('mat-smiles').value = 'C1=CC2=CC=CC3=CC=CC1=C23'; }
+function tryCatalystExample() {
+    document.getElementById('cat-catalyst').value = 'c1ccc2c(c1)-c1ccccc1C2(P(c1ccccc1)c1ccccc1)';
+    document.getElementById('cat-substrate').value = 'O=C(O)C(Cc1ccccc1)N';
+}
+
 async function refresh() {
     const now = new Date().toLocaleTimeString();
     document.getElementById('refresh-indicator').textContent = 'Last refresh: ' + now;
@@ -1134,8 +1362,7 @@ async function refresh() {
             statRow('Status', health.status, 'val-green') +
             statRow('Uptime', Math.floor(health.uptime_seconds / 60) + ' min') +
             statRow('DB Molecules', health.molecules_in_store.toLocaleString(), 'val-cyan') +
-            enrichInfo +
-            fpInfo;
+            enrichInfo + fpInfo;
     }
 
     if (stats) {
@@ -1144,13 +1371,11 @@ async function refresh() {
             statRow('Enantiomers', stats.enantiomer_pairs.toLocaleString(), 'val-green') +
             statRow('Diastereomers', stats.diastereomer_pairs.toLocaleString(), 'val-orange') +
             statRow('Fingerprinted', stats.molecules_fingerprinted.toLocaleString(), 'val-purple');
-
         document.getElementById('screening-stats').innerHTML =
             statRow('Total Hits', stats.total_hits.toLocaleString(), 'val-cyan') +
             statRow('With Activity', stats.pairs_with_activity.toLocaleString(), 'val-green') +
             statRow('Differential', stats.pairs_with_differential.toLocaleString(), 'val-orange') +
             statRow('Activity Gaps', stats.pairs_with_gaps.toLocaleString(), 'val-red');
-
         const maxBar = Math.max(stats.total_pairs || 1, 1);
         document.getElementById('bars-container').innerHTML =
             bar('Enantiomers', stats.enantiomer_pairs, maxBar, '#00ff88') +
@@ -1192,8 +1417,7 @@ async function refresh() {
         for (const e of enriched.pairs) {
             for (const dt of (e.differential_targets || [])) {
                 diffRows += `<tr>
-                    <td>${e.mol_a_id}</td>
-                    <td>${e.mol_b_id}</td>
+                    <td>${e.mol_a_id}</td><td>${e.mol_b_id}</td>
                     <td title="${dt.target_id}">${dt.target_name || dt.target_id}</td>
                     <td>${dt.type}</td>
                     <td>${typeof dt.mean_a === 'number' ? dt.mean_a.toFixed(2) : '-'}</td>
@@ -1209,19 +1433,15 @@ async function refresh() {
 async function doSearch() {
     const smiles = document.getElementById('search-smiles').value.trim();
     const mode = document.getElementById('search-mode').value;
-    if (!smiles) return;
-
+    if (!smiles) { markError('search-smiles'); return; }
     const data = await fetchJSON('/search?smiles=' + encodeURIComponent(smiles) + '&mode=' + mode + '&k=20');
     if (!data || !data.results) {
-        document.getElementById('search-results').innerHTML =
-            '<tr><td colspan="6" style="color:#ff4444">Search failed</td></tr>';
+        document.getElementById('search-results').innerHTML = '<tr><td colspan="6" style="color:#ff4444">Search failed</td></tr>';
         return;
     }
-
     document.getElementById('search-results').innerHTML = data.results.map((r, i) =>
         `<tr>
-            <td>${i + 1}</td>
-            <td>${r.name || '-'}</td>
+            <td>${i + 1}</td><td>${r.name || '-'}</td>
             <td title="${r.smiles}">${r.smiles.substring(0, 40)}</td>
             <td class="${r.similarity > 0.8 ? 'val-green' : r.similarity > 0.6 ? 'val-orange' : ''}">${r.similarity.toFixed(4)}</td>
             <td>${r.chirality_score.toFixed(4)}</td>
@@ -1230,29 +1450,24 @@ async function doSearch() {
     ).join('') || '<tr><td colspan="6" style="color:#888">No results</td></tr>';
 }
 
-document.getElementById('search-smiles').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') doSearch();
-});
+document.getElementById('search-smiles').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
 
-async function doMaterialAnalysis() {
+async function doMaterialAnalysis(evt) {
     const smiles = document.getElementById('mat-smiles').value.trim();
-    if (!smiles) return;
+    if (!smiles) { markError('mat-smiles'); return; }
     const card = document.getElementById('mat-results');
     const body = document.getElementById('mat-results-body');
+    const btn = evt ? evt.target : null;
+    setLoading(btn, true, 'Analyze Material');
     body.innerHTML = '<div style="color:#888">Analyzing...</div>';
     card.style.display = 'block';
-
     try {
         const r = await fetch(BASE + '/materials/analyze', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({smiles})
         });
         const data = await r.json();
-        if (data.error) {
-            body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`;
-            return;
-        }
+        if (data.error) { markError('mat-smiles'); body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`; return; }
         const chiral = data.is_chiral ? '<span class="val-green">CHIRAL</span>' : '<span class="val-red">ACHIRAL</span>';
         body.innerHTML =
             statRow('Status', chiral) +
@@ -1265,44 +1480,40 @@ async function doMaterialAnalysis() {
             statRow('CISS Score', data.ciss_score.toFixed(4), data.ciss_score > 0.5 ? 'val-green' : '') +
             statRow('Optical Rotation', data.optical_rotation) +
             statRow('Band Gap Shift', data.band_gap_shift.toFixed(6));
-    } catch(e) {
-        body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`;
-    }
+    } catch(e) { body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`; }
+    finally { setLoading(btn, false, 'Analyze Material'); }
 }
 
-async function doCatalystPredict() {
+async function doCatalystPredict(evt) {
     const catalyst = document.getElementById('cat-catalyst').value.trim();
     const substrate = document.getElementById('cat-substrate').value.trim();
-    if (!catalyst || !substrate) return;
+    if (!catalyst) { markError('cat-catalyst'); return; }
+    if (!substrate) { markError('cat-substrate'); return; }
     const card = document.getElementById('cat-results');
     const body = document.getElementById('cat-results-body');
+    const btn = evt ? evt.target : null;
+    setLoading(btn, true, 'Predict ee%');
     body.innerHTML = '<div style="color:#888">Predicting (training model on benchmark data)...</div>';
     card.style.display = 'block';
-
     try {
         const r = await fetch(BASE + '/catalysts/predict-ee', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({catalyst, substrate})
         });
         const data = await r.json();
-        if (data.error) {
-            body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`;
-            return;
-        }
+        if (data.error) { body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`; return; }
         const eeColor = data.ee_percent > 90 ? 'val-green' : data.ee_percent > 50 ? 'val-orange' : 'val-red';
         body.innerHTML =
             statRow('Predicted ee', data.ee_percent.toFixed(1) + '%', eeColor) +
             statRow('Major Enantiomer', data.major_enantiomer, data.major_enantiomer === 'R' ? 'val-green' : 'val-red') +
             statRow('Confidence', data.confidence.toFixed(3)) +
             '<div style="margin:8px 0;border-top:1px solid #1e1e2e;padding-top:8px;color:#666;font-size:10px">Model trained on BINAP hydrogenation benchmark (10 reactions)</div>';
-    } catch(e) {
-        body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`;
-    }
+    } catch(e) { body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`; }
+    finally { setLoading(btn, false, 'Predict ee%'); }
 }
 
-document.getElementById('mat-smiles').addEventListener('keydown', (e) => { if (e.key === 'Enter') doMaterialAnalysis(); });
-document.getElementById('cat-substrate').addEventListener('keydown', (e) => { if (e.key === 'Enter') doCatalystPredict(); });
+document.getElementById('mat-smiles').addEventListener('keydown', (e) => { if (e.key === 'Enter') doMaterialAnalysis(e); });
+document.getElementById('cat-substrate').addEventListener('keydown', (e) => { if (e.key === 'Enter') doCatalystPredict(e); });
 
 async function refreshCOD() {
     const data = await fetchJSON('/cod/status');
@@ -1358,13 +1569,16 @@ async function refreshORD() {
     body.innerHTML = html || '<div style="color:#888">Processing...</div>';
 }
 
-async function doTargetProfile() {
+async function doTargetProfile(evt) {
     const a = document.getElementById('tgt-smiles-a').value.trim();
     const b = document.getElementById('tgt-smiles-b').value.trim();
-    if (!a || !b) return;
+    if (!a) { markError('tgt-smiles-a'); return; }
+    if (!b) { markError('tgt-smiles-b'); return; }
     const card = document.getElementById('tgt-results');
     const body = document.getElementById('tgt-results-body');
-    body.innerHTML = '<div style="color:#888">Profiling...</div>';
+    const btn = evt ? evt.target : null;
+    setLoading(btn, true, 'Profile Targets');
+    body.innerHTML = '<div style="color:#888">Profiling 986 targets...</div>';
     card.style.display = 'block';
     try {
         const r = await fetch(BASE + '/targets/profile', {
@@ -1372,7 +1586,7 @@ async function doTargetProfile() {
             body: JSON.stringify({smiles_a: a, smiles_b: b})
         });
         const data = await r.json();
-        if (data.error) { body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`; return; }
+        if (data.error) { markError('tgt-smiles-a'); body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`; return; }
         let html = statRow('Sensitive Targets', data.n_sensitive, 'val-green') +
             statRow('Top Target', data.top_target || '-', 'val-cyan') +
             statRow('Top Fold Change', (data.top_fold_change || 0).toFixed(1) + 'x', 'val-orange');
@@ -1386,24 +1600,16 @@ async function doTargetProfile() {
         }
         body.innerHTML = html;
     } catch(e) { body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`; }
+    finally { setLoading(btn, false, 'Profile Targets'); }
 }
 
-async function refreshTargets() {
-    const data = await fetchJSON('/targets/status');
-    const body = document.getElementById('targets-status');
-    if (!data || !data.progress) { body.innerHTML = '<div style="color:#888">No target models trained yet. Run: python scripts/train_target_models.py</div>'; return; }
-    const p = data.progress;
-    body.innerHTML = statRow('Targets Trained', p.n_targets_trained || 0, 'val-green') +
-        statRow('Targets Skipped', p.n_targets_skipped || 0) +
-        statRow('Total Records', p.total_records || 0, 'val-cyan') +
-        statRow('Elapsed', (p.elapsed_seconds || 0).toFixed(1) + 's');
-}
-
-async function doADMETProfile() {
+async function doADMETProfile(evt) {
     const smiles = document.getElementById('admet-smiles').value.trim();
-    if (!smiles) return;
+    if (!smiles) { markError('admet-smiles'); return; }
     const card = document.getElementById('admet-results');
     const body = document.getElementById('admet-results-body');
+    const btn = evt ? evt.target : null;
+    setLoading(btn, true, 'Profile');
     body.innerHTML = '<div style="color:#888">Profiling...</div>';
     card.style.display = 'block';
     try {
@@ -1412,7 +1618,7 @@ async function doADMETProfile() {
             body: JSON.stringify({smiles})
         });
         const data = await r.json();
-        if (data.error) { body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`; return; }
+        if (data.error) { markError('admet-smiles'); body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`; return; }
         const riskColor = data.overall_risk === 'high_risk' ? 'val-red' : data.overall_risk === 'moderate_risk' ? 'val-orange' : 'val-green';
         let html = statRow('Overall Risk', data.overall_risk, riskColor) +
             statRow('High Risk', data.n_high_risk, 'val-red') +
@@ -1427,14 +1633,18 @@ async function doADMETProfile() {
         }
         body.innerHTML = html;
     } catch(e) { body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`; }
+    finally { setLoading(btn, false, 'Profile'); }
 }
 
-async function doADMETCompare() {
+async function doADMETCompare(evt) {
     const a = document.getElementById('admet-a').value.trim();
     const b = document.getElementById('admet-b').value.trim();
-    if (!a || !b) return;
+    if (!a) { markError('admet-a'); return; }
+    if (!b) { markError('admet-b'); return; }
     const card = document.getElementById('admet-compare-results');
     const body = document.getElementById('admet-compare-body');
+    const btn = evt ? evt.target : null;
+    setLoading(btn, true, 'Compare Enantiomers');
     body.innerHTML = '<div style="color:#888">Comparing...</div>';
     card.style.display = 'block';
     try {
@@ -1458,6 +1668,7 @@ async function doADMETCompare() {
         }
         body.innerHTML = html;
     } catch(e) { body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`; }
+    finally { setLoading(btn, false, 'Compare Enantiomers'); }
 }
 
 async function refreshADMET() {
@@ -1470,11 +1681,13 @@ async function refreshADMET() {
         statRow('Elapsed', (p.elapsed_seconds || 0).toFixed(1) + 's');
 }
 
-async function doOptimize() {
+async function doOptimize(evt) {
     const smiles = document.getElementById('gen-smiles').value.trim();
-    if (!smiles) return;
+    if (!smiles) { markError('gen-smiles'); return; }
     const card = document.getElementById('gen-results');
     const body = document.getElementById('gen-results-body');
+    const btn = evt ? evt.target : null;
+    setLoading(btn, true, 'Optimize');
     body.innerHTML = '<div style="color:#888">Optimizing...</div>';
     card.style.display = 'block';
     try {
@@ -1483,7 +1696,7 @@ async function doOptimize() {
             body: JSON.stringify({smiles})
         });
         const data = await r.json();
-        if (data.error) { body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`; return; }
+        if (data.error) { markError('gen-smiles'); body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`; return; }
         let html = statRow('Input', data.input_smiles) +
             statRow('Best', data.best_smiles, 'val-green') +
             statRow('Score', data.best_score.toFixed(4), 'val-cyan') +
@@ -1499,13 +1712,16 @@ async function doOptimize() {
         }
         body.innerHTML = html;
     } catch(e) { body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`; }
+    finally { setLoading(btn, false, 'Optimize'); }
 }
 
-async function doEnumerate() {
+async function doEnumerate(evt) {
     const smiles = document.getElementById('gen-smiles').value.trim();
-    if (!smiles) return;
+    if (!smiles) { markError('gen-smiles'); return; }
     const card = document.getElementById('gen-results');
     const body = document.getElementById('gen-results-body');
+    const btn = evt ? evt.target : null;
+    setLoading(btn, true, 'Enumerate All');
     body.innerHTML = '<div style="color:#888">Enumerating...</div>';
     card.style.display = 'block';
     try {
@@ -1514,7 +1730,7 @@ async function doEnumerate() {
             body: JSON.stringify({smiles})
         });
         const data = await r.json();
-        if (data.error) { body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`; return; }
+        if (data.error) { markError('gen-smiles'); body.innerHTML = `<div style="color:#ff4444">Error: ${data.error}</div>`; return; }
         let html = statRow('Input', data.input_smiles) + statRow('Variants', data.n_variants, 'val-cyan');
         if (data.variants && data.variants.length > 0) {
             html += '<table style="margin-top:8px"><thead><tr><th>Rank</th><th>SMILES</th><th>Centers</th><th>Config</th><th>Score</th><th>Original</th></tr></thead><tbody>';
@@ -1527,19 +1743,19 @@ async function doEnumerate() {
         }
         body.innerHTML = html;
     } catch(e) { body.innerHTML = `<div style="color:#ff4444">Error: ${e.message}</div>`; }
+    finally { setLoading(btn, false, 'Enumerate All'); }
 }
 
-document.getElementById('tgt-smiles-b').addEventListener('keydown', (e) => { if (e.key === 'Enter') doTargetProfile(); });
-document.getElementById('admet-smiles').addEventListener('keydown', (e) => { if (e.key === 'Enter') doADMETProfile(); });
-document.getElementById('admet-b').addEventListener('keydown', (e) => { if (e.key === 'Enter') doADMETCompare(); });
-document.getElementById('gen-smiles').addEventListener('keydown', (e) => { if (e.key === 'Enter') doOptimize(); });
+document.getElementById('tgt-smiles-b').addEventListener('keydown', (e) => { if (e.key === 'Enter') doTargetProfile(e); });
+document.getElementById('admet-smiles').addEventListener('keydown', (e) => { if (e.key === 'Enter') doADMETProfile(e); });
+document.getElementById('admet-b').addEventListener('keydown', (e) => { if (e.key === 'Enter') doADMETCompare(e); });
+document.getElementById('gen-smiles').addEventListener('keydown', (e) => { if (e.key === 'Enter') doOptimize(e); });
 
 refresh();
 refreshCOD();
 refreshORD();
-refreshTargets();
 refreshADMET();
-refreshTimer = setInterval(() => { refresh(); refreshCOD(); refreshORD(); refreshTargets(); refreshADMET(); }, 15000);
+refreshTimer = setInterval(() => { refresh(); refreshCOD(); refreshORD(); refreshADMET(); }, 15000);
 </script>
 </body>
 </html>
