@@ -1,0 +1,1596 @@
+{
+  "model_1_regressor": {
+    "logo": {
+      "rho": -0.1990984323418545,
+      "p": 0.009244276055038667,
+      "mae": 0.8156776758586096,
+      "r2": -0.400788099868967
+    },
+    "kfold": {
+      "rho": 0.35963881137238274,
+      "p": 1.4597513688676514e-06,
+      "mae": 0.6171165312577477,
+      "r2": 0.1753269031804363
+    },
+    "baseline_mean_mae": 0.6993568837421202,
+    "baseline_div_only": {
+      "rho": 0.266674786066559,
+      "mae": 0.6344959735512009
+    },
+    "per_pathway": {
+      "AMPK": {
+        "n": 4,
+        "rho": 0.39999999999999997,
+        "mae": 1.0645617029159107
+      },
+      "PI3K": {
+        "n": 5,
+        "rho": -0.7,
+        "mae": 1.1064365276038137
+      },
+      "SIRT": {
+        "n": 5,
+        "rho": -0.19999999999999998,
+        "mae": 0.7732887582957917
+      },
+      "mTOR": {
+        "n": 59,
+        "rho": -0.014056723703591598,
+        "mae": 0.6984416302960657
+      },
+      "p53": {
+        "n": 60,
+        "rho": -0.1967213114754099,
+        "mae": 0.9512862200179691
+      },
+      "proteasome": {
+        "n": 35,
+        "rho": 0.1204481792717087,
+        "mae": 0.7206286535182062
+      },
+      "telomerase": {
+        "n": 2,
+        "rho": 0.9999999999999999,
+        "mae": 0.7505496965593546
+      }
+    }
+  },
+  "model_2_classifier": {
+    "logo": {
+      "auc": 0.8329624684764872,
+      "precision": 0.6226415094339622,
+      "recall": 0.5238095238095238,
+      "f1": 0.5689655172413793
+    },
+    "kfold": {
+      "auc": 0.9187064233793205,
+      "precision": 0.7397260273972602,
+      "recall": 0.8571428571428571,
+      "f1": 0.7941176470588235
+    }
+  },
+  "model_3_global": {
+    "mode": "global_style_loo",
+    "n_valid": 170,
+    "n_targets": 30,
+    "rho": 0.549351395644995,
+    "p": 8.670683280247489e-15,
+    "mae": 0.5526607531273301,
+    "r2": 0.33498814492121587
+  },
+  "global_mode": "global_style_loo",
+  "golden_candidates": [
+    {
+      "id_a": "CHEMBL4759169",
+      "id_b": "CHEMBL4763925",
+      "target": "PI3-kinase p110-delta/p85-alpha",
+      "pathway": "PI3K",
+      "actual_fc": 3551.136363636364,
+      "actual_log_fc": 3.5503673495299255,
+      "divergence": 0.9208874564922851,
+      "qed": 0.4719353845526804,
+      "n_centers": 1,
+      "predicted_log_fc": 3.49532115007821,
+      "high_probability": 0.9998029631791893,
+      "global_predicted_log_fc": 3.4846566259128666,
+      "shap_top3_regressor": [
+        [
+          "FracCSP3",
+          0.31065241939774724
+        ],
+        [
+          "fp_b_57",
+          0.285391449328282
+        ],
+        [
+          "fp_absdiff_96",
+          0.15241186412926597
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.720409106429452
+        ],
+        [
+          "fp_prod_14",
+          1.1376637455949454
+        ],
+        [
+          "fp_absdiff_91",
+          0.8859533884748976
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL4460164",
+      "id_b": "CHEMBL4535115",
+      "target": "Phosphatidylinositol 4,5-bisphosphate 3-kinase catalytic subunit alpha isoform",
+      "pathway": "mTOR",
+      "actual_fc": 1910.8280254777071,
+      "actual_log_fc": 3.2812216023104286,
+      "divergence": 0.9499717120038862,
+      "qed": 0.7298922726392932,
+      "n_centers": 4,
+      "predicted_log_fc": 3.257101308139422,
+      "high_probability": 0.9991532600916341,
+      "global_predicted_log_fc": 3.183811927922327,
+      "shap_top3_regressor": [
+        [
+          "fp_absdiff_113",
+          0.41725308544019235
+        ],
+        [
+          "fp_a_9",
+          0.25441930787396966
+        ],
+        [
+          "fp_a_15",
+          0.13782286620112405
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          4.980622200330799
+        ],
+        [
+          "fp_prod_14",
+          1.3898687859478667
+        ],
+        [
+          "fp_absdiff_91",
+          -0.800896100838637
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL3913159",
+      "id_b": "CHEMBL4115541",
+      "target": "Tumour suppressor p53/oncoprotein Mdm2",
+      "pathway": "p53",
+      "actual_fc": 1698.2436524617426,
+      "actual_log_fc": 3.2299999999999995,
+      "divergence": 0.7380160737692227,
+      "qed": 0.3503173004101206,
+      "n_centers": 1,
+      "predicted_log_fc": 3.212097757386277,
+      "high_probability": 0.9998517219519596,
+      "global_predicted_log_fc": 3.2022624802936868,
+      "shap_top3_regressor": [
+        [
+          "fp_absdiff_76",
+          0.4324218985446602
+        ],
+        [
+          "FracCSP3",
+          0.2455065609936682
+        ],
+        [
+          "fp_absdiff_96",
+          0.1197352780915477
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.968110222527049
+        ],
+        [
+          "fp_prod_14",
+          1.0634381131066435
+        ],
+        [
+          "fp_absdiff_91",
+          1.0001777323795418
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL3914063",
+      "id_b": "CHEMBL4110257",
+      "target": "Tumour suppressor p53/oncoprotein Mdm2",
+      "pathway": "p53",
+      "actual_fc": 1348.9628825916561,
+      "actual_log_fc": 3.130000000000001,
+      "divergence": 0.9651317684478082,
+      "qed": 0.3503173004101206,
+      "n_centers": 1,
+      "predicted_log_fc": 3.105793351202994,
+      "high_probability": 0.9998623524759499,
+      "global_predicted_log_fc": 3.056986762551164,
+      "shap_top3_regressor": [
+        [
+          "fp_absdiff_76",
+          0.4272731545324657
+        ],
+        [
+          "FracCSP3",
+          0.21756709803432736
+        ],
+        [
+          "fp_absdiff_96",
+          0.11845066668893375
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.946270269637971
+        ],
+        [
+          "fp_prod_14",
+          1.071586966149456
+        ],
+        [
+          "fp_absdiff_91",
+          1.002716829092387
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL3894082",
+      "id_b": "CHEMBL4108457",
+      "target": "Tumour suppressor p53/oncoprotein Mdm2",
+      "pathway": "p53",
+      "actual_fc": 1174.8975549395302,
+      "actual_log_fc": 3.0700000000000003,
+      "divergence": 0.9808276879762875,
+      "qed": 0.33559256955863426,
+      "n_centers": 1,
+      "predicted_log_fc": 3.071414674157544,
+      "high_probability": 0.9998965402697424,
+      "global_predicted_log_fc": 3.0525792632179156,
+      "shap_top3_regressor": [
+        [
+          "fp_absdiff_76",
+          0.4209777349793391
+        ],
+        [
+          "FracCSP3",
+          0.22783485481145047
+        ],
+        [
+          "fp_absdiff_96",
+          0.10349783096685805
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.918514067279721
+        ],
+        [
+          "fp_prod_14",
+          1.071523228938131
+        ],
+        [
+          "fp_absdiff_91",
+          1.008857201540545
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL5205717",
+      "id_b": "CHEMBL5192498",
+      "target": "Proteasome subunit beta type-8",
+      "pathway": "proteasome",
+      "actual_fc": 1089.2341643103052,
+      "actual_log_fc": 3.037121254719663,
+      "divergence": 0.7050346967105817,
+      "qed": 0.6888880775529933,
+      "n_centers": 2,
+      "predicted_log_fc": 3.0078493114344056,
+      "high_probability": 0.9993044472332344,
+      "global_predicted_log_fc": 2.9858013075729812,
+      "shap_top3_regressor": [
+        [
+          "FracCSP3",
+          0.29490201455672665
+        ],
+        [
+          "fp_a_9",
+          0.24816638347066458
+        ],
+        [
+          "fp_a_50",
+          0.06402901231057243
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          2.5547400808594856
+        ],
+        [
+          "fp_prod_14",
+          1.0876520261714346
+        ],
+        [
+          "fp_absdiff_91",
+          0.9189575954380332
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL4285202",
+      "id_b": "CHEMBL4285600",
+      "target": "Phosphatidylinositol 4,5-bisphosphate 3-kinase catalytic subunit alpha isoform",
+      "pathway": "mTOR",
+      "actual_fc": 937.5,
+      "actual_log_fc": 2.9719712763997563,
+      "divergence": 0.9760464452596976,
+      "qed": 0.7545381634543509,
+      "n_centers": 4,
+      "predicted_log_fc": 2.9689063672782914,
+      "high_probability": 0.9993007623977169,
+      "global_predicted_log_fc": 2.9688859703260233,
+      "shap_top3_regressor": [
+        [
+          "fp_a_9",
+          0.22861824896394126
+        ],
+        [
+          "fp_b_57",
+          0.21799041377633996
+        ],
+        [
+          "fp_a_15",
+          0.10506300756972167
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.118556828085456
+        ],
+        [
+          "fp_prod_14",
+          1.3092417857066714
+        ],
+        [
+          "n_chiral_centers",
+          0.5016789108586361
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL4112168",
+      "id_b": "CHEMBL3911501",
+      "target": "Tumour suppressor p53/oncoprotein Mdm2",
+      "pathway": "p53",
+      "actual_fc": 870.9635899560815,
+      "actual_log_fc": 2.9400000000000004,
+      "divergence": 0.9741206642393198,
+      "qed": 0.341287682903441,
+      "n_centers": 1,
+      "predicted_log_fc": 2.931714955629185,
+      "high_probability": 0.9997357058466967,
+      "global_predicted_log_fc": 2.942974199613241,
+      "shap_top3_regressor": [
+        [
+          "fp_absdiff_76",
+          0.4238864138569868
+        ],
+        [
+          "FracCSP3",
+          0.21916177154075603
+        ],
+        [
+          "fp_absdiff_96",
+          0.10365173219689076
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.680937369950013
+        ],
+        [
+          "fp_prod_14",
+          1.0635655965453694
+        ],
+        [
+          "fp_absdiff_91",
+          0.9839211183648552
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL4784596",
+      "id_b": "CHEMBL4788529",
+      "target": "PI3-kinase p110-delta/p85-alpha",
+      "pathway": "PI3K",
+      "actual_fc": 789.0803975686144,
+      "actual_log_fc": 2.8971212547196625,
+      "divergence": 0.9030533580739746,
+      "qed": 0.4719353845526804,
+      "n_centers": 1,
+      "predicted_log_fc": 2.9286714810584193,
+      "high_probability": 0.9998339771402753,
+      "global_predicted_log_fc": 2.889354576355918,
+      "shap_top3_regressor": [
+        [
+          "fp_b_57",
+          0.2835272979897986
+        ],
+        [
+          "FracCSP3",
+          0.2757149222571754
+        ],
+        [
+          "fp_absdiff_96",
+          0.14379854997969735
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.791581292678999
+        ],
+        [
+          "fp_prod_14",
+          1.0904349284429937
+        ],
+        [
+          "fp_absdiff_91",
+          0.8833309030810204
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL1242468",
+      "id_b": "CHEMBL1242378",
+      "target": "Ephrin type-B receptor 4",
+      "pathway": "mTOR",
+      "actual_fc": 700.0,
+      "actual_log_fc": 2.845098040014257,
+      "divergence": 0.8175745408099024,
+      "qed": 0.6738770514920662,
+      "n_centers": 1,
+      "predicted_log_fc": 2.838340537207729,
+      "high_probability": 0.9996370196736042,
+      "global_predicted_log_fc": 2.787524352031519,
+      "shap_top3_regressor": [
+        [
+          "FracCSP3",
+          0.24563968947637838
+        ],
+        [
+          "fp_a_9",
+          0.24039252756732393
+        ],
+        [
+          "fp_a_15",
+          0.13341774691765265
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.657304639309964
+        ],
+        [
+          "fp_prod_14",
+          1.0547742162377678
+        ],
+        [
+          "fp_absdiff_91",
+          0.5720568678327912
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL3897997",
+      "id_b": "CHEMBL4114518",
+      "target": "Tumour suppressor p53/oncoprotein Mdm2",
+      "pathway": "p53",
+      "actual_fc": 512.8613839913648,
+      "actual_log_fc": 2.71,
+      "divergence": 0.7559164455391771,
+      "qed": 0.3787711854837529,
+      "n_centers": 1,
+      "predicted_log_fc": 2.717433486847796,
+      "high_probability": 0.9998263300142266,
+      "global_predicted_log_fc": 2.709435256116922,
+      "shap_top3_regressor": [
+        [
+          "fp_absdiff_76",
+          0.41973044120722885
+        ],
+        [
+          "FracCSP3",
+          0.22680649133608463
+        ],
+        [
+          "QED",
+          0.09000724903298706
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.909468997924518
+        ],
+        [
+          "fp_prod_14",
+          1.0708565450283045
+        ],
+        [
+          "fp_absdiff_91",
+          1.0001777323795418
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL3909949",
+      "id_b": "CHEMBL4107940",
+      "target": "Tumour suppressor p53/oncoprotein Mdm2",
+      "pathway": "p53",
+      "actual_fc": 446.68359215096257,
+      "actual_log_fc": 2.6499999999999995,
+      "divergence": 0.9016579321745826,
+      "qed": 0.5005046012298741,
+      "n_centers": 1,
+      "predicted_log_fc": 2.633649621983715,
+      "high_probability": 0.9998711249645496,
+      "global_predicted_log_fc": 2.6206243186674296,
+      "shap_top3_regressor": [
+        [
+          "fp_absdiff_76",
+          0.4112617501366275
+        ],
+        [
+          "fp_absdiff_96",
+          0.12192658203499455
+        ],
+        [
+          "QED",
+          -0.11184834557532249
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.9330490804029585
+        ],
+        [
+          "fp_prod_14",
+          1.1807802500908524
+        ],
+        [
+          "fp_absdiff_91",
+          1.0114543422836828
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL371432",
+      "id_b": "CHEMBL198609",
+      "target": "NAD-dependent protein deacetylase sirtuin-1",
+      "pathway": "SIRT",
+      "actual_fc": 363.07805477010174,
+      "actual_log_fc": 2.5600000000000005,
+      "divergence": 0.8746035525048357,
+      "qed": 0.7624627574565053,
+      "n_centers": 1,
+      "predicted_log_fc": 2.551908071853662,
+      "high_probability": 0.99917830362105,
+      "global_predicted_log_fc": 2.5496211526172075,
+      "shap_top3_regressor": [
+        [
+          "fp_absdiff_113",
+          0.241066790578368
+        ],
+        [
+          "fp_a_9",
+          0.21194692306648116
+        ],
+        [
+          "fp_b_57",
+          0.1311780707078043
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.216675681871394
+        ],
+        [
+          "fp_prod_14",
+          1.1634037005629314
+        ],
+        [
+          "QED",
+          0.6718908419393755
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL3924973",
+      "id_b": "CHEMBL4106757",
+      "target": "Tumour suppressor p53/oncoprotein Mdm2",
+      "pathway": "p53",
+      "actual_fc": 298.5382618917963,
+      "actual_log_fc": 2.4750000000000005,
+      "divergence": 0.9488952913174371,
+      "qed": 0.3781318272177747,
+      "n_centers": 1,
+      "predicted_log_fc": 2.4903906129857023,
+      "high_probability": 0.9998894871672367,
+      "global_predicted_log_fc": 2.4928541295748827,
+      "shap_top3_regressor": [
+        [
+          "fp_absdiff_76",
+          0.3857707001048392
+        ],
+        [
+          "FracCSP3",
+          0.18064512572271235
+        ],
+        [
+          "fp_absdiff_96",
+          0.1197352780915477
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.941050361710193
+        ],
+        [
+          "fp_prod_14",
+          1.0760620483550405
+        ],
+        [
+          "fp_absdiff_91",
+          1.0141619223360356
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL4594206",
+      "id_b": "CHEMBL4541686",
+      "target": "PI3-kinase p110-alpha/p85-alpha",
+      "pathway": "mTOR",
+      "actual_fc": 87.51046495798208,
+      "actual_log_fc": 1.9420599913279624,
+      "divergence": 0.981755792019053,
+      "qed": 0.8431102775629616,
+      "n_centers": 2,
+      "predicted_log_fc": 1.928352966881671,
+      "high_probability": 0.9997247537116263,
+      "global_predicted_log_fc": 1.8991318026480086,
+      "shap_top3_regressor": [
+        [
+          "fp_b_57",
+          0.14704786822671417
+        ],
+        [
+          "fp_a_9",
+          0.10412137244539399
+        ],
+        [
+          "fp_b_12",
+          -0.09551445205451059
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.503445514791601
+        ],
+        [
+          "fp_prod_14",
+          1.2202064431088042
+        ],
+        [
+          "fp_absdiff_91",
+          0.7255102158963312
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL4562100",
+      "id_b": "CHEMBL4579619",
+      "target": "PI3-kinase p110-alpha/p85-alpha",
+      "pathway": "mTOR",
+      "actual_fc": 76.21842871852994,
+      "actual_log_fc": 1.8820599913279628,
+      "divergence": 0.9631867808451017,
+      "qed": 0.8357773130470247,
+      "n_centers": 1,
+      "predicted_log_fc": 1.8712835009199242,
+      "high_probability": 0.9997049368849885,
+      "global_predicted_log_fc": 1.8523004072762972,
+      "shap_top3_regressor": [
+        [
+          "fp_b_57",
+          0.20572609926545943
+        ],
+        [
+          "QED",
+          -0.09064898657916247
+        ],
+        [
+          "fp_absdiff_76",
+          -0.07642698715538172
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.598353004906055
+        ],
+        [
+          "fp_prod_14",
+          1.301969691960086
+        ],
+        [
+          "fp_absdiff_91",
+          -0.5565534411103668
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL5933575",
+      "id_b": "CHEMBL5932224",
+      "target": "Serine/threonine-protein kinase mTOR",
+      "pathway": "mTOR",
+      "actual_fc": 64.56542290346549,
+      "actual_log_fc": 1.8099999999999996,
+      "divergence": 0.8242925650126327,
+      "qed": 0.7545140530855223,
+      "n_centers": 1,
+      "predicted_log_fc": 1.7947411103490651,
+      "high_probability": 0.9994233335155328,
+      "global_predicted_log_fc": 1.7916041526784154,
+      "shap_top3_regressor": [
+        [
+          "fp_a_15",
+          0.10593089934411296
+        ],
+        [
+          "fp_absdiff_96",
+          -0.05631762275135723
+        ],
+        [
+          "fp_absdiff_76",
+          -0.051966372216067945
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.47149989800261
+        ],
+        [
+          "fp_prod_14",
+          1.1140853462906037
+        ],
+        [
+          "fp_absdiff_91",
+          -0.7461948376638584
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL5188029",
+      "id_b": "CHEMBL5184466",
+      "target": "Proteasome subunit beta type-8",
+      "pathway": "proteasome",
+      "actual_fc": 61.33334661426361,
+      "actual_log_fc": 1.7876966623306476,
+      "divergence": 0.7372371063257578,
+      "qed": 0.7131080776654252,
+      "n_centers": 4,
+      "predicted_log_fc": 1.7776515421031007,
+      "high_probability": 0.9992022199430753,
+      "global_predicted_log_fc": 1.7811365712965472,
+      "shap_top3_regressor": [
+        [
+          "fp_a_15",
+          0.11464459576599992
+        ],
+        [
+          "fp_a_50",
+          0.06578222444987591
+        ],
+        [
+          "fp_absdiff_113",
+          -0.04762556766019184
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.255211965293994
+        ],
+        [
+          "fp_absdiff_91",
+          -0.4009097407699249
+        ],
+        [
+          "fp_prod_39",
+          0.37147472882373966
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL4438609",
+      "id_b": "CHEMBL4560738",
+      "target": "PI3-kinase p110-alpha/p85-alpha",
+      "pathway": "mTOR",
+      "actual_fc": 61.25213834008595,
+      "actual_log_fc": 1.7871212547196629,
+      "divergence": 0.8767533958728767,
+      "qed": 0.8002238823388846,
+      "n_centers": 1,
+      "predicted_log_fc": 1.7611056075347895,
+      "high_probability": 0.9987891155576127,
+      "global_predicted_log_fc": 1.7755424021523913,
+      "shap_top3_regressor": [
+        [
+          "fp_absdiff_113",
+          0.310127191382313
+        ],
+        [
+          "QED",
+          -0.13409019124076005
+        ],
+        [
+          "fp_prod_29",
+          -0.056053804051487945
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.328213352879586
+        ],
+        [
+          "fp_prod_14",
+          1.2751538150952244
+        ],
+        [
+          "fp_absdiff_91",
+          0.8062743528133518
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL5763596",
+      "id_b": "CHEMBL5760799",
+      "target": "Serine/threonine-protein kinase mTOR",
+      "pathway": "mTOR",
+      "actual_fc": 55.0,
+      "actual_log_fc": 1.7403626894942439,
+      "divergence": 0.9676343702109413,
+      "qed": 0.3730583301284967,
+      "n_centers": 1,
+      "predicted_log_fc": 1.738591204546116,
+      "high_probability": 0.9994537850551574,
+      "global_predicted_log_fc": 1.7470106458701913,
+      "shap_top3_regressor": [
+        [
+          "FracCSP3",
+          0.16691377911105443
+        ],
+        [
+          "fp_absdiff_96",
+          0.09097725959722283
+        ],
+        [
+          "fp_absdiff_120",
+          -0.07308385095469355
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.539462827611328
+        ],
+        [
+          "fp_prod_14",
+          1.2842327490307581
+        ],
+        [
+          "fp_absdiff_91",
+          0.9822115199416265
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL4288210",
+      "id_b": "CHEMBL4277562",
+      "target": "Serine/threonine-protein kinase mTOR",
+      "pathway": "mTOR",
+      "actual_fc": 49.7876072231269,
+      "actual_log_fc": 1.697121254719663,
+      "divergence": 0.8572823875881421,
+      "qed": 0.7908489281593156,
+      "n_centers": 4,
+      "predicted_log_fc": 1.6904619975093076,
+      "high_probability": 0.9993480939095916,
+      "global_predicted_log_fc": 1.7043807958537096,
+      "shap_top3_regressor": [
+        [
+          "fp_b_57",
+          0.14821676593195174
+        ],
+        [
+          "fp_absdiff_76",
+          -0.08255617932997657
+        ],
+        [
+          "fp_b_72",
+          -0.07956730828276491
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.3232063790887
+        ],
+        [
+          "fp_prod_14",
+          1.1554142375271983
+        ],
+        [
+          "n_chiral_centers",
+          0.5376332577021257
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL5200546",
+      "id_b": "CHEMBL5181539",
+      "target": "Proteasome Macropain subunit MB1",
+      "pathway": "proteasome",
+      "actual_fc": 43.75523247899104,
+      "actual_log_fc": 1.6410299956639811,
+      "divergence": 0.8233902098022192,
+      "qed": 0.7054760912755083,
+      "n_centers": 2,
+      "predicted_log_fc": 1.6270951937799898,
+      "high_probability": 0.9992667429708761,
+      "global_predicted_log_fc": 1.6233250545550402,
+      "shap_top3_regressor": [
+        [
+          "fp_b_57",
+          0.12643219281783438
+        ],
+        [
+          "fp_absdiff_76",
+          -0.0798756152837326
+        ],
+        [
+          "QED",
+          -0.0734032357833006
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.349931094303218
+        ],
+        [
+          "fp_prod_14",
+          1.143500359717481
+        ],
+        [
+          "fp_absdiff_91",
+          -0.6929631767046404
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL5747666",
+      "id_b": "CHEMBL5871579",
+      "target": "Serine/threonine-protein kinase mTOR",
+      "pathway": "mTOR",
+      "actual_fc": 40.0,
+      "actual_log_fc": 1.6020599913279623,
+      "divergence": 0.7637105175924109,
+      "qed": 0.5378022472675354,
+      "n_centers": 1,
+      "predicted_log_fc": 1.587329266859215,
+      "high_probability": 0.9992675898108994,
+      "global_predicted_log_fc": 1.5603884237467853,
+      "shap_top3_regressor": [
+        [
+          "fp_absdiff_96",
+          -0.05558241876285779
+        ],
+        [
+          "fp_absdiff_76",
+          -0.047897851290831774
+        ],
+        [
+          "QED",
+          -0.04663792186970308
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.296809405938189
+        ],
+        [
+          "fp_absdiff_91",
+          -0.6290569714755504
+        ],
+        [
+          "fp_absdiff_72",
+          0.37908287290708587
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL1774364",
+      "id_b": "CHEMBL1774367",
+      "target": "PC-3",
+      "pathway": "mTOR",
+      "actual_fc": 39.547702156692225,
+      "actual_log_fc": 1.5971212547196625,
+      "divergence": 0.9342305574878297,
+      "qed": 0.6487288189868544,
+      "n_centers": 1,
+      "predicted_log_fc": 1.5993519613722353,
+      "high_probability": 0.9997262997645637,
+      "global_predicted_log_fc": 1.5586035787537746,
+      "shap_top3_regressor": [
+        [
+          "fp_absdiff_113",
+          0.2738082118044685
+        ],
+        [
+          "QED",
+          -0.06731982305444106
+        ],
+        [
+          "FracCSP3",
+          -0.0455313548462664
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.615276237907455
+        ],
+        [
+          "fp_prod_14",
+          1.2037108061901434
+        ],
+        [
+          "fp_absdiff_91",
+          0.830793506026784
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL3769991",
+      "id_b": "CHEMBL3769518",
+      "target": "NAD-dependent protein deacetylase sirtuin-2",
+      "pathway": "SIRT",
+      "actual_fc": 37.15352290971728,
+      "actual_log_fc": 1.5700000000000003,
+      "divergence": 0.8341658231357709,
+      "qed": 0.3244309338342352,
+      "n_centers": 1,
+      "predicted_log_fc": 1.5585308489274545,
+      "high_probability": 0.9995028929422723,
+      "global_predicted_log_fc": 1.5841653573594476,
+      "shap_top3_regressor": [
+        [
+          "FracCSP3",
+          0.1650805550178788
+        ],
+        [
+          "fp_absdiff_76",
+          -0.07593404109422255
+        ],
+        [
+          "fp_prod_72",
+          -0.06583257603352895
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.604506103556266
+        ],
+        [
+          "fp_prod_14",
+          0.9616458158923692
+        ],
+        [
+          "fp_absdiff_91",
+          0.9367860242996943
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL6037298",
+      "id_b": "CHEMBL5791782",
+      "target": "Proteasome Macropain subunit MB1",
+      "pathway": "proteasome",
+      "actual_fc": 36.36363636363637,
+      "actual_log_fc": 1.5606673061697374,
+      "divergence": 0.7687148343139001,
+      "qed": 0.47895043827371336,
+      "n_centers": 2,
+      "predicted_log_fc": 1.5595251666903196,
+      "high_probability": 0.9996817851827732,
+      "global_predicted_log_fc": 1.560390812132781,
+      "shap_top3_regressor": [
+        [
+          "FracCSP3",
+          0.13706110061649318
+        ],
+        [
+          "fp_b_12",
+          -0.10231768717364198
+        ],
+        [
+          "fp_a_9",
+          0.09888704742749246
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.465711538348329
+        ],
+        [
+          "fp_prod_14",
+          1.3611503906476554
+        ],
+        [
+          "fp_absdiff_91",
+          0.7140740274532552
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL3653613",
+      "id_b": "CHEMBL3653615",
+      "target": "Serine/threonine-protein kinase mTOR",
+      "pathway": "mTOR",
+      "actual_fc": 30.90295432513592,
+      "actual_log_fc": 1.4900000000000002,
+      "divergence": 0.9481250858307109,
+      "qed": 0.41437791986615713,
+      "n_centers": 1,
+      "predicted_log_fc": 1.5083430660092556,
+      "high_probability": 0.9996916897437675,
+      "global_predicted_log_fc": 1.4468507208628048,
+      "shap_top3_regressor": [
+        [
+          "FracCSP3",
+          0.2080438179065998
+        ],
+        [
+          "fp_absdiff_76",
+          -0.06215285874188666
+        ],
+        [
+          "fp_absdiff_19",
+          -0.051668561290825726
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.655493712088944
+        ],
+        [
+          "fp_prod_14",
+          1.166810425638831
+        ],
+        [
+          "fp_absdiff_91",
+          0.9751354911025126
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL575989",
+      "id_b": "CHEMBL575130",
+      "target": "Serine/threonine-protein kinase mTOR",
+      "pathway": "mTOR",
+      "actual_fc": 28.25075089245511,
+      "actual_log_fc": 1.4510299956639816,
+      "divergence": 0.8547102492341714,
+      "qed": 0.41652532635519673,
+      "n_centers": 2,
+      "predicted_log_fc": 1.4486301798639776,
+      "high_probability": 0.9996554799663775,
+      "global_predicted_log_fc": 1.4372009909322028,
+      "shap_top3_regressor": [
+        [
+          "fp_prod_72",
+          -0.0725856222803758
+        ],
+        [
+          "fp_absdiff_76",
+          -0.06817691558964786
+        ],
+        [
+          "fp_a_50",
+          0.06251601406899222
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.641523681254877
+        ],
+        [
+          "fp_prod_14",
+          1.1378955573155178
+        ],
+        [
+          "fp_absdiff_91",
+          1.0006743956055888
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL575345",
+      "id_b": "CHEMBL575539",
+      "target": "Serine/threonine-protein kinase mTOR",
+      "pathway": "mTOR",
+      "actual_fc": 27.54228703338169,
+      "actual_log_fc": 1.4400000000000004,
+      "divergence": 0.8766574809065455,
+      "qed": 0.5903113004375655,
+      "n_centers": 2,
+      "predicted_log_fc": 1.4279927752736639,
+      "high_probability": 0.9997653340437336,
+      "global_predicted_log_fc": 1.4262763822243778,
+      "shap_top3_regressor": [
+        [
+          "FracCSP3",
+          -0.09074828417800658
+        ],
+        [
+          "QED",
+          -0.08590176899514688
+        ],
+        [
+          "fp_absdiff_76",
+          -0.05490470510349207
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.594758295222838
+        ],
+        [
+          "fp_prod_14",
+          1.0997498070737262
+        ],
+        [
+          "fp_absdiff_91",
+          0.9612974480557409
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL1242748",
+      "id_b": "CHEMBL1242749",
+      "target": "Serine/threonine-protein kinase mTOR",
+      "pathway": "mTOR",
+      "actual_fc": 27.36032518067729,
+      "actual_log_fc": 1.4371212547196623,
+      "divergence": 0.9007240165964039,
+      "qed": 0.7488980361133214,
+      "n_centers": 1,
+      "predicted_log_fc": 1.428622204507858,
+      "high_probability": 0.9992690912988478,
+      "global_predicted_log_fc": 1.440026781719185,
+      "shap_top3_regressor": [
+        [
+          "fp_absdiff_91",
+          -0.14788805938238642
+        ],
+        [
+          "QED",
+          -0.10000861440673853
+        ],
+        [
+          "FracCSP3",
+          0.0678929942276909
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.222590585223593
+        ],
+        [
+          "fp_prod_14",
+          1.1300006256840398
+        ],
+        [
+          "fp_absdiff_91",
+          -0.6416598597537817
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL1774382",
+      "id_b": "CHEMBL1774380",
+      "target": "MCF7",
+      "pathway": "mTOR",
+      "actual_fc": 18.92872033440583,
+      "actual_log_fc": 1.2771212547196633,
+      "divergence": 0.7720802946143103,
+      "qed": 0.6142905222766998,
+      "n_centers": 1,
+      "predicted_log_fc": 1.2778971370698844,
+      "high_probability": 0.9995432804066414,
+      "global_predicted_log_fc": 1.2523273706422653,
+      "shap_top3_regressor": [
+        [
+          "FracCSP3",
+          -0.10080393701132609
+        ],
+        [
+          "QED",
+          -0.09888195404022031
+        ],
+        [
+          "fp_absdiff_76",
+          -0.06591177000040134
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.586847748373275
+        ],
+        [
+          "fp_prod_14",
+          1.0561562859984177
+        ],
+        [
+          "fp_absdiff_91",
+          0.9689073701876502
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL1774378",
+      "id_b": "CHEMBL1774376",
+      "target": "MCF7",
+      "pathway": "mTOR",
+      "actual_fc": 18.076787582230743,
+      "actual_log_fc": 1.2571212547196626,
+      "divergence": 0.9458344502134615,
+      "qed": 0.6864486077227359,
+      "n_centers": 1,
+      "predicted_log_fc": 1.2603338584683317,
+      "high_probability": 0.9997005748475459,
+      "global_predicted_log_fc": 1.2609830155158133,
+      "shap_top3_regressor": [
+        [
+          "QED",
+          -0.10296894552938352
+        ],
+        [
+          "fp_b_9",
+          -0.0801250365174043
+        ],
+        [
+          "FracCSP3",
+          -0.06118566689209575
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.592448025345157
+        ],
+        [
+          "fp_prod_14",
+          1.1998538810369743
+        ],
+        [
+          "fp_absdiff_91",
+          0.8447061419569698
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL3645819",
+      "id_b": "CHEMBL3645820",
+      "target": "Phosphatidylinositol 4,5-bisphosphate 3-kinase catalytic subunit alpha isoform",
+      "pathway": "mTOR",
+      "actual_fc": 15.524942332573824,
+      "actual_log_fc": 1.191029995663981,
+      "divergence": 0.9394742857700973,
+      "qed": 0.5725087502535858,
+      "n_centers": 1,
+      "predicted_log_fc": 1.1743811933488946,
+      "high_probability": 0.9992936742092478,
+      "global_predicted_log_fc": 1.2295735328523165,
+      "shap_top3_regressor": [
+        [
+          "QED",
+          -0.10047161634056906
+        ],
+        [
+          "FracCSP3",
+          -0.07975557016968582
+        ],
+        [
+          "fp_absdiff_76",
+          -0.05293902408058278
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.508807855123951
+        ],
+        [
+          "fp_absdiff_91",
+          0.9881365781320686
+        ],
+        [
+          "fp_b_21",
+          0.6377001464318018
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL1088971",
+      "id_b": "CHEMBL1088972",
+      "target": "LNCaP",
+      "pathway": "mTOR",
+      "actual_fc": 13.836619418378726,
+      "actual_log_fc": 1.1410299956639811,
+      "divergence": 0.7168605189130663,
+      "qed": 0.4495057663157496,
+      "n_centers": 4,
+      "predicted_log_fc": 1.1587068547350852,
+      "high_probability": 0.9994222632412046,
+      "global_predicted_log_fc": 1.153338740482984,
+      "shap_top3_regressor": [
+        [
+          "fp_b_57",
+          0.09378958186043745
+        ],
+        [
+          "fp_b_72",
+          -0.07726130474121769
+        ],
+        [
+          "fp_absdiff_76",
+          -0.07643670167241434
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.4608550086548755
+        ],
+        [
+          "fp_prod_26",
+          0.5804396360560006
+        ],
+        [
+          "n_chiral_centers",
+          0.5016789108586361
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL4457600",
+      "id_b": "CHEMBL4516675",
+      "target": "Phosphatidylinositol 4,5-bisphosphate 3-kinase catalytic subunit alpha isoform",
+      "pathway": "mTOR",
+      "actual_fc": 12.913084580693125,
+      "actual_log_fc": 1.1110299956639818,
+      "divergence": 0.9353106725220917,
+      "qed": 0.7853746849992652,
+      "n_centers": 1,
+      "predicted_log_fc": 1.091041476221671,
+      "high_probability": 0.9987432217838232,
+      "global_predicted_log_fc": 1.1089547091704672,
+      "shap_top3_regressor": [
+        [
+          "QED",
+          -0.09158940496941882
+        ],
+        [
+          "fp_absdiff_76",
+          -0.061089078513083574
+        ],
+        [
+          "fp_absdiff_113",
+          -0.04369407148923226
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.144068813531827
+        ],
+        [
+          "fp_prod_14",
+          1.2839292132546158
+        ],
+        [
+          "fp_absdiff_91",
+          -0.7920137730052981
+        ]
+      ]
+    },
+    {
+      "id_a": "CHEMBL5416576",
+      "id_b": "CHEMBL5403027",
+      "target": "TP53-binding protein 1",
+      "pathway": "p53",
+      "actual_fc": 11.81680312544783,
+      "actual_log_fc": 1.0724999999999998,
+      "divergence": 0.9523882030850583,
+      "qed": 0.5106764987521859,
+      "n_centers": 1,
+      "predicted_log_fc": 1.0599170442424266,
+      "high_probability": 0.9996599881671957,
+      "global_predicted_log_fc": 1.103629736698589,
+      "shap_top3_regressor": [
+        [
+          "FracCSP3",
+          -0.09495191315853418
+        ],
+        [
+          "QED",
+          -0.08049585774836074
+        ],
+        [
+          "fp_absdiff_76",
+          -0.06788548918615003
+        ]
+      ],
+      "shap_top3_classifier": [
+        [
+          "divergence",
+          5.606499715864705
+        ],
+        [
+          "fp_prod_14",
+          1.2572139723976048
+        ],
+        [
+          "fp_absdiff_91",
+          0.9840569781187339
+        ]
+      ]
+    }
+  ]
+}
