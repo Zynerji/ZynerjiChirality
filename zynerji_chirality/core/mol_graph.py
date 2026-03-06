@@ -193,6 +193,44 @@ def mol_to_chiral_adjacency(
     return csr_matrix((vals, (rows, cols)), shape=(n, n))
 
 
+def _is_bridged_bicyclic(mol: Chem.Mol) -> bool:
+    """Detect bridged bicyclic systems via SSSR ring membership.
+
+    A bridged bicyclic has atoms shared by 3+ rings in the smallest set of
+    smallest rings (SSSR). Examples: norbornane, camphor, dextromethorphan.
+
+    Parameters
+    ----------
+    mol : Chem.Mol
+        RDKit molecule (2D or 3D).
+
+    Returns
+    -------
+    bool
+        True if molecule contains a bridged bicyclic system.
+    """
+    ri = mol.GetRingInfo()
+    if ri.NumRings() < 2:
+        return False
+
+    # Count how many SSSR rings each atom belongs to
+    atom_ring_count = [0] * mol.GetNumAtoms()
+    for ring in ri.AtomRings():
+        for idx in ring:
+            atom_ring_count[idx] += 1
+
+    # Bridgehead atoms appear in 3+ SSSR rings (or 2+ rings that share
+    # more than one atom — the classic bridged definition)
+    # More robust: check if any pair of rings shares 2+ atoms (bridged)
+    rings = list(ri.AtomRings())
+    for i in range(len(rings)):
+        for j in range(i + 1, len(rings)):
+            shared = set(rings[i]) & set(rings[j])
+            if len(shared) >= 2:
+                return True
+    return False
+
+
 def smiles_to_mol3d(smiles: str) -> Chem.Mol:
     """Parse SMILES and generate 3D conformer.
 
@@ -236,23 +274,34 @@ def smiles_to_mol3d(smiles: str) -> Chem.Mol:
 
     # CPU path: ETKDG (fast for small-to-medium molecules)
     mol = Chem.AddHs(_parsed)
+    bridged = _is_bridged_bicyclic(_parsed)
 
-    # ETKDG for 3D conformer generation
-    params = AllChem.ETKDGv3()
-    params.randomSeed = 42
-    used_random_coords = False
-    status = AllChem.EmbedMolecule(mol, params)
-    if status == -1:
-        # Fallback: try without ETKDG constraints
-        status = AllChem.EmbedMolecule(mol, randomSeed=42)
+    if bridged:
+        # Bridged ring path: ETKDGv3 + macrocycle torsions helps bridged systems
+        status = -1
+        used_random_coords = False
+
+        # Try 1: ETKDGv3 with useMacrocycleTorsions (helps bridged geometry)
+        params_b = AllChem.ETKDGv3()
+        params_b.randomSeed = 42
+        params_b.useMacrocycleTorsions = True
+        status = AllChem.EmbedMolecule(mol, params_b)
+
         if status == -1:
-            # Fallback 2: useRandomCoords for large/complex molecules
-            params2 = AllChem.ETKDGv3()
-            params2.randomSeed = 42
-            params2.useRandomCoords = True
-            status = AllChem.EmbedMolecule(mol, params2)
+            # Try 2: basic knowledge only (relaxed distance bounds)
+            params_b2 = AllChem.ETKDGv3()
+            params_b2.randomSeed = 42
+            params_b2.useBasicKnowledge = False
+            status = AllChem.EmbedMolecule(mol, params_b2)
+
+        if status == -1:
+            # Try 3: random coords — but DO run MMFF for bridged rings
+            # (CIP needs correct geometry at bridgeheads)
+            params_b3 = AllChem.ETKDGv3()
+            params_b3.randomSeed = 42
+            params_b3.useRandomCoords = True
+            status = AllChem.EmbedMolecule(mol, params_b3)
             if status == -1:
-                # Fallback 3: try GPU if available (even below threshold)
                 if _CUDA_PIPELINE is not None:
                     try:
                         mol = _CUDA_PIPELINE.embed_molecule(smiles)
@@ -263,10 +312,40 @@ def smiles_to_mol3d(smiles: str) -> Chem.Mol:
                 raise ValueError(f"Cannot embed 3D conformer for: {smiles}")
             used_random_coords = True
 
-    # Skip expensive MMFF for random-coords fallback — bond-order fingerprints
-    # don't need accurate 3D geometry, just valid conformer for CIP assignment
-    if not used_random_coords:
+        # Bridged rings ALWAYS run MMFF (even random-coords) for correct
+        # bridgehead geometry needed by CIP assignment
         AllChem.MMFFOptimizeMolecule(mol, maxIters=200)
+    else:
+        # Standard (non-bridged) path: unchanged
+        params = AllChem.ETKDGv3()
+        params.randomSeed = 42
+        used_random_coords = False
+        status = AllChem.EmbedMolecule(mol, params)
+        if status == -1:
+            # Fallback: try without ETKDG constraints
+            status = AllChem.EmbedMolecule(mol, randomSeed=42)
+            if status == -1:
+                # Fallback 2: useRandomCoords for large/complex molecules
+                params2 = AllChem.ETKDGv3()
+                params2.randomSeed = 42
+                params2.useRandomCoords = True
+                status = AllChem.EmbedMolecule(mol, params2)
+                if status == -1:
+                    # Fallback 3: try GPU if available (even below threshold)
+                    if _CUDA_PIPELINE is not None:
+                        try:
+                            mol = _CUDA_PIPELINE.embed_molecule(smiles)
+                            _cache_put(smiles, mol)
+                            return mol
+                        except Exception:
+                            pass
+                    raise ValueError(f"Cannot embed 3D conformer for: {smiles}")
+                used_random_coords = True
+
+        # Skip expensive MMFF for random-coords fallback — bond-order fingerprints
+        # don't need accurate 3D geometry, just valid conformer for CIP assignment
+        if not used_random_coords:
+            AllChem.MMFFOptimizeMolecule(mol, maxIters=200)
 
     # Assign stereochemistry from 3D
     Chem.AssignStereochemistry(mol, cleanIt=True, force=True)

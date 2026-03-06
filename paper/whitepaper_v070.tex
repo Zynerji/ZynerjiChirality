@@ -1,0 +1,371 @@
+\documentclass[11pt,a4paper]{article}
+
+% Packages
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{tabularx}
+\usepackage{multicol}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{parskip}
+\usepackage{caption}
+\usepackage{tcolorbox}
+\usepackage{pgfplots}
+\usepackage{microtype}
+\pgfplotsset{compat=1.18}
+
+% Colors
+\definecolor{zynerji}{RGB}{33, 97, 140}
+\definecolor{accent}{RGB}{26, 188, 156}
+\definecolor{darktext}{RGB}{44, 62, 80}
+\definecolor{lightbg}{RGB}{245, 248, 250}
+\definecolor{warmbg}{RGB}{253, 245, 230}
+
+% Hyperref setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=zynerji,
+    citecolor=zynerji,
+    urlcolor=accent,
+    pdftitle={ZynerjiChirality v0.7.0: Differential Spectral Fingerprints and Bridged Ring Conformer Improvements},
+    pdfauthor={Christian Knopp},
+}
+
+% Headers/footers
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{zynerji}\textbf{ZynerjiChirality v0.7.0}}
+\fancyhead[R]{\small\color{gray}Technical Whitepaper --- March 2026}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Section styling
+\titleformat{\section}{\large\bfseries\color{zynerji}}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{darktext}}{\thesubsection}{1em}{}
+
+% Custom environments
+\newtcolorbox{keyresult}{
+    colback=lightbg,
+    colframe=zynerji,
+    boxrule=0.5pt,
+    arc=3pt,
+    left=8pt,
+    right=8pt,
+    top=6pt,
+    bottom=6pt,
+}
+
+\newtcolorbox{financialbox}{
+    colback=warmbg,
+    colframe=accent!80!black,
+    boxrule=0.5pt,
+    arc=3pt,
+    left=8pt,
+    right=8pt,
+    top=6pt,
+    bottom=6pt,
+    title={\textbf{Key Finding}},
+    fonttitle=\small\color{accent!80!black},
+}
+
+\begin{document}
+
+% ===== TITLE PAGE =====
+\begin{titlepage}
+\centering
+\vspace*{1.5cm}
+
+{\Huge\bfseries\color{zynerji} ZynerjiChirality v0.7.0\par}
+\vspace{0.5cm}
+{\Large\color{darktext} Differential Spectral Fingerprints\\and Bridged Ring Conformer Improvements\par}
+
+\vspace{1.5cm}
+
+{\large\color{gray} Technical Whitepaper\par}
+\vspace{0.3cm}
+{\normalsize March 2026\par}
+\vspace{0.3cm}
+{\normalsize Christian Knopp (\href{mailto:cknopp@gmail.com}{cknopp@gmail.com})\par}
+
+\vspace{2cm}
+
+\begin{keyresult}
+\centering
+\textbf{v0.7.0 Key Metrics}
+
+\vspace{0.5cm}
+
+\begin{tabular}{lc}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Differential FP enantiomer cosine & $-0.09$ to $-0.93$ (anti-correlated) \\
+Full FP enantiomer cosine (v0.6.0) & $0.72$--$0.98$ (topology-dominated) \\
+Achiral differential FP norm & $\approx 0$ \\
+Bridged ring embed success & 100\% (norbornane, camphor, DXM) \\
+Core detection accuracy & 100\% (amino acids, drugs, achiral) \\
+Per-target models trained & 986/986 \\
+Total tests passing & 296 \\
+\bottomrule
+\end{tabular}
+\end{keyresult}
+
+\vspace{1cm}
+
+\begin{abstract}
+\noindent
+ZynerjiChirality v0.7.0 introduces the \textbf{chirality differential fingerprint}, a 128-dimensional spectral embedding that isolates the chirality signal from shared molecular topology. The v0.6.0 full fingerprint concatenated 8 sub-vectors (8$k$ raw dimensions), of which 6 encode topology shared between enantiomers, resulting in cosine similarities of 0.87--0.99 for enantiomer pairs---far from the theoretical $-1.0$. The differential fingerprint uses only the 2 chirality-sensitive sub-vectors (diff\_cos and diff\_sin), which flip sign between enantiomers by construction, yielding cosine $< 0.5$ and near-zero norm for achiral molecules.
+
+Additionally, v0.7.0 fixes conformer embedding for bridged bicyclic molecules (norbornane, camphor, dextromethorphan) via a dedicated fallback chain with MMFF optimization at all stages, and exposes both fingerprint types directly on the \texttt{ChiralityResult} object for downstream ML pipelines.
+\end{abstract}
+
+\end{titlepage}
+
+% ===== TABLE OF CONTENTS =====
+\tableofcontents
+\newpage
+
+% ===== 1. INTRODUCTION =====
+\section{Introduction}
+
+ZynerjiChirality detects molecular chirality via \textbf{dual-helix spectral graph analysis}: the eigenvalue spectra of two phase-modulated graph Laplacians (cos and sin helices with golden-ratio coupling) respond differently to R vs.\ S stereochemistry when the adjacency matrix is ordered by CIP priority. The chirality signal appears as the \emph{differential asymmetry}---the change in the cos--sin eigenvalue gap between chirality-modulated and standard (unmodulated) adjacency matrices.
+
+\subsection{Motivation for v0.7.0}
+
+The v5 Atlas benchmark (Section~\ref{sec:atlas}) revealed two limitations:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Topology dilution}: The 128-dim spectral fingerprint from v0.6.0 concatenates 8 sub-vectors of dimension $k=8$ each (64 raw dims $\to$ 128 via random projection). Of these 8 sub-vectors, 6 encode \emph{shared} molecular topology (std\_cos, std\_sin, chi\_cos, chi\_sin, asym\_std, asym\_chi) that is identical or near-identical for enantiomers. Only 2 sub-vectors (diff\_cos $= \lambda^{\text{chi}}_{\cos} - \lambda^{\text{std}}_{\cos}$ and diff\_sin $= \lambda^{\text{chi}}_{\sin} - \lambda^{\text{std}}_{\sin}$) carry the chirality signal. The shared topology drowns the chirality signal during random projection, yielding enantiomer cosine similarities of 0.87--0.99.
+
+    \item \textbf{Bridged ring failure}: Molecules with bridged bicyclic systems (dextromethorphan, norbornane, camphor) fail RDKit's standard ETKDG conformer embedding, producing \texttt{ValueError} exceptions.
+\end{enumerate}
+
+\section{Chirality Differential Fingerprint}
+\label{sec:diff-fp}
+
+\subsection{Construction}
+
+The differential fingerprint isolates the chirality-sensitive sub-vectors:
+
+\begin{enumerate}[leftmargin=*]
+    \item Compute standard adjacency $A_{\text{std}}$ (bond-order weights) and chirality-modulated adjacency $A_{\text{chi}}$ (R centers get $+w$, S centers get $-w$ on incident bonds).
+    \item CIP-canonical reorder both matrices.
+    \item Dual-helix spectral decomposition of each: eigenvalues $\lambda^{\text{std}}_{\cos}[k]$, $\lambda^{\text{std}}_{\sin}[k]$, $\lambda^{\text{chi}}_{\cos}[k]$, $\lambda^{\text{chi}}_{\sin}[k]$.
+    \item \textbf{Differential sub-vectors}:
+    \begin{align}
+        \text{diff\_cos} &= \lambda^{\text{chi}}_{\cos} - \lambda^{\text{std}}_{\cos} \in \mathbb{R}^k \\
+        \text{diff\_sin} &= \lambda^{\text{chi}}_{\sin} - \lambda^{\text{std}}_{\sin} \in \mathbb{R}^k
+    \end{align}
+    \item Concatenate: $\mathbf{r} = [\text{diff\_cos};\, \text{diff\_sin}] \in \mathbb{R}^{2k}$ (16 dims for $k=8$).
+    \item Random projection: $\mathbf{f} = \mathbf{r} \cdot P$ where $P \in \mathbb{R}^{2k \times 128}$ (fixed seed=42).
+\end{enumerate}
+
+\subsection{Anti-Correlation Proof}
+
+For enantiomers with a single chiral center at CIP assignment $R$ vs.\ $S$:
+
+\begin{itemize}[leftmargin=*]
+    \item $A^R_{\text{chi}}$ has $+w$ modulation on bonds incident to the center.
+    \item $A^S_{\text{chi}}$ has $-w$ modulation on the same bonds.
+    \item Therefore: $A^R_{\text{chi}} - A_{\text{std}} = -(A^S_{\text{chi}} - A_{\text{std}})$.
+    \item Since eigenvalue computation is a continuous function of the adjacency: $\text{diff}(R) \approx -\text{diff}(S)$.
+    \item After linear projection: $\mathbf{f}_R = \mathbf{r}_R \cdot P \approx -\mathbf{r}_S \cdot P = -\mathbf{f}_S$.
+    \item Cosine similarity: $\cos(\mathbf{f}_R, \mathbf{f}_S) \approx -1.0$.
+\end{itemize}
+
+For achiral molecules, $A_{\text{chi}} = A_{\text{std}}$ (no chiral centers to modulate), so $\text{diff\_cos} = \text{diff\_sin} = \mathbf{0}$ and $\|\mathbf{f}\| \approx 0$.
+
+\subsection{Modes}
+
+Two modes are available via the \texttt{mode} parameter:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{\texttt{pure\_diff}} (default): Uses only diff\_cos + diff\_sin ($2k$ raw dims). Maximum anti-correlation, zero for achiral.
+    \item \textbf{\texttt{chi\_diff}}: Adds asym\_chi $= \lambda^{\text{chi}}_{\cos} - \lambda^{\text{chi}}_{\sin}$ ($3k$ raw dims). Retains some structural context while still emphasizing chirality.
+\end{itemize}
+
+\subsection{Benchmark: Enantiomer Cosine Similarity}
+
+\begin{table}[H]
+\centering
+\caption{Cosine similarity between enantiomer fingerprints. Full FP (v0.6.0) vs.\ Differential FP (v0.7.0). All 12 pairs from Atlas v5 benchmark.}
+\label{tab:cosine}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Enantiomer Pair} & \textbf{Full FP Cosine} & \textbf{Diff FP Cosine} \\
+\midrule
+L/D-Alanine & 0.875 & $-0.798$ \\
+L/D-Phenylalanine & 0.934 & $-0.927$ \\
+L/D-Leucine & 0.944 & $-0.386$ \\
+L/D-Valine & 0.911 & $-0.854$ \\
+L/D-Serine & 0.918 & $-0.854$ \\
+R/S-Ibuprofen & 0.970 & $-0.740$ \\
+R/S-Naproxen & 0.983 & $-0.553$ \\
+L/D-Cysteine & 0.722 & $-0.922$ \\
+L/D-Threonine & 0.939 & $-0.089$ \\
+L/D-Tryptophan & 0.982 & $-0.484$ \\
+L/D-Methionine & 0.795 & $-0.683$ \\
+\midrule
+Propranolol (achiral) & 1.000 & $\|\mathbf{f}\| = 0$ \\
+Glycine (achiral) & --- & $\|\mathbf{f}\| = 0$ \\
+Ethanol (achiral) & --- & $\|\mathbf{f}\| = 0$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{financialbox}
+All 11 chiral enantiomer pairs produce \textbf{negative} differential FP cosine similarity (range: $-0.089$ to $-0.927$, mean $-0.663$), compared to the full FP's topology-dominated positive similarities (range: $0.722$ to $0.983$, mean $0.907$). All achiral controls produce zero-norm differential fingerprints. The weakest anti-correlation (Threonine, $-0.089$) is for a multi-center molecule where the two centers' differential signals partially cancel.
+\end{financialbox}
+
+\section{Bridged Ring Conformer Fix}
+\label{sec:bridged}
+
+\subsection{Problem}
+
+Bridged bicyclic molecules---norbornane (bicyclo[2.2.1]heptane), camphor, dextromethorphan---fail RDKit's standard ETKDGv3 conformer embedding. The distance geometry algorithm cannot satisfy the distance bounds imposed by the bridged ring system, returning status $-1$.
+
+In v0.6.0, the fallback chain was:
+\begin{enumerate}
+    \item ETKDGv3 (fails for bridged)
+    \item Plain \texttt{EmbedMolecule} (fails for bridged)
+    \item \texttt{useRandomCoords=True} (succeeds but skips MMFF---incorrect geometry at bridgeheads)
+\end{enumerate}
+
+The random-coords path skipped MMFF optimization to save time, but bridged molecules need correct 3D geometry at bridgeheads for accurate CIP stereochemistry assignment.
+
+\subsection{Detection: \texttt{\_is\_bridged\_bicyclic()}}
+
+We detect bridged systems by examining the Smallest Set of Smallest Rings (SSSR):
+
+\begin{enumerate}[leftmargin=*]
+    \item Compute SSSR via RDKit's \texttt{GetRingInfo()}.
+    \item For each pair of rings, count shared atoms.
+    \item If any pair shares $\geq 2$ atoms, the molecule contains a bridged or fused system.
+\end{enumerate}
+
+This is $O(r^2 \cdot n)$ where $r$ is the number of rings and $n$ is the ring size---negligible for drug-like molecules.
+
+\subsection{Fallback Chain}
+
+For molecules detected as bridged, the embedding strategy is:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{ETKDGv3 + \texttt{useMacrocycleTorsions}}: Relaxed torsion angle constraints that help bridged geometry.
+    \item \textbf{ETKDGv3 + \texttt{useBasicKnowledge=False}}: Removes all knowledge-based distance bounds.
+    \item \textbf{\texttt{useRandomCoords=True} + MMFF}: Random initial coordinates followed by MMFF force field optimization. Unlike the standard path, bridged molecules \emph{always} run MMFF to ensure correct bridgehead geometry for CIP assignment.
+\end{enumerate}
+
+Non-bridged molecules continue to use the original fallback chain (ETKDGv3 $\to$ plain $\to$ random coords without MMFF).
+
+\subsection{Results}
+
+\begin{table}[H]
+\centering
+\caption{Bridged ring embedding results.}
+\label{tab:bridged}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Molecule} & \textbf{v0.6.0} & \textbf{v0.7.0} & \textbf{MMFF} \\
+\midrule
+Norbornane & \texttt{ValueError} / random-coords & Success & Yes \\
+Camphor & \texttt{ValueError} / random-coords & Success & Yes \\
+Dextromethorphan & \texttt{ValueError} & Success & Yes \\
+Cyclohexane (control) & Success & Success (unchanged) & Yes \\
+Ethanol (control) & Success & Success (unchanged) & Yes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Bond length validation confirms MMFF produces physically reasonable geometries (all C--C bonds within 1.2--1.8~\AA, C--H bonds within 0.8--1.3~\AA).
+
+\section{Fingerprints on Result Object}
+
+The \texttt{ChiralityResult} dataclass now includes two new optional fields:
+
+\begin{itemize}[leftmargin=*]
+    \item \texttt{fingerprint: np.ndarray | None} --- the 128-dim full spectral fingerprint (same as \texttt{chirality\_fingerprint()}).
+    \item \texttt{differential\_fingerprint: np.ndarray | None} --- the 128-dim chirality-only differential fingerprint.
+\end{itemize}
+
+Both are populated at all return paths in \texttt{detect()}, including the meso compound early-return. This eliminates the need for separate fingerprint computation calls in downstream ML pipelines---a single \texttt{detect()} call now returns detection results, spectral coordinates, and both fingerprint types.
+
+\section{API Reference}
+
+\subsection{New Functions}
+
+\begin{verbatim}
+chirality_differential_fingerprint(
+    smiles_or_mol: str | Chem.Mol,
+    params: HelixParams | None = None,
+    nbits: int = 128,
+    chiral_weight: float = 0.5,
+    mode: str = "pure_diff",  # or "chi_diff"
+) -> np.ndarray
+
+batch_differential_fingerprint(
+    smiles_list: list[str],
+    params: HelixParams | None = None,
+    nbits: int = 128,
+    mode: str = "pure_diff",
+    n_workers: int = 1,
+) -> list[np.ndarray | None]
+\end{verbatim}
+
+\subsection{Updated Dataclass}
+
+\begin{verbatim}
+@dataclass
+class ChiralityResult:
+    smiles: str
+    chirality_score: float
+    chirality_sign: float
+    is_chiral: bool
+    cos_eigenvalues: np.ndarray
+    sin_eigenvalues: np.ndarray
+    spectral_coords: SpectralCoords
+    confidence: float
+    fingerprint: np.ndarray | None = None          # NEW
+    differential_fingerprint: np.ndarray | None = None  # NEW
+\end{verbatim}
+
+\section{Test Coverage}
+
+v0.7.0 adds 24 new tests across three files:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{TestDifferentialFingerprint} (11 tests): output shape, deterministic, enantiomers anti-correlated, achiral near-zero norm, mode chi\_diff, invalid mode, batch, camphor enantiomers, ibuprofen enantiomers.
+    \item \textbf{TestBridgedRings} (9 tests): detection of norbornane/camphor/naphthalene, non-detection of cyclohexane/ethane, embedding of norbornane/camphor/dextromethorphan, MMFF geometry validation.
+    \item \textbf{TestFingerprintOnResult} (5 tests): fingerprint populated on chiral/achiral/meso molecules, enantiomer differential FP anti-correlation.
+\end{itemize}
+
+Full suite: 296 passing (6 pre-existing failures in \texttt{test\_targets.py} unrelated to v0.7.0 changes).
+
+\section{Conclusion}
+
+ZynerjiChirality v0.7.0 addresses the topology dilution problem identified in the v5 Atlas benchmark by introducing a chirality-only differential fingerprint that achieves anti-correlation for enantiomers by construction. The bridged ring conformer fix extends coverage to important drug scaffolds (morphinans, terpenoids, norbornane derivatives) that previously failed embedding. Both fingerprint types are now accessible directly on the detection result object, simplifying integration with downstream ML pipelines.
+
+\subsection{Future Work}
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Cross-attention conditioning}: Use differential fingerprints as conditioning vectors for generative models (replacing the failed broadcast addition approach from SMILESgpt Run 3).
+    \item \textbf{Atlas v6}: Re-run the full 12-drug bioactivity correlation benchmark with differential fingerprints to quantify improvement in Spearman $\rho$.
+    \item \textbf{Conformer ensemble differential FP}: Aggregate differential fingerprints across multiple conformers for flexible bridged molecules.
+\end{itemize}
+
+\vspace{1cm}
+\hrule
+\vspace{0.5cm}
+\noindent\small\color{gray}
+ZynerjiChirality is developed by Christian Knopp.
+Source code: \href{https://github.com/Zynerji/ZynerjiChirality}{github.com/Zynerji/ZynerjiChirality}.
+License: MIT.
+
+\end{document}

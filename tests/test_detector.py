@@ -202,3 +202,42 @@ class TestAsymmetryComputation:
         )
         assert score == 0.0
         assert sign == 0.0
+
+
+class TestFingerprintOnResult:
+    """Tests for fingerprint fields on ChiralityResult."""
+
+    def test_fingerprint_populated(self, detector):
+        """detect() should populate result.fingerprint."""
+        result = detector.detect("N[C@@H](C)C(=O)O")
+        assert result.fingerprint is not None
+        assert result.fingerprint.shape == (128,)
+
+    def test_differential_fingerprint_populated(self, detector):
+        """detect() should populate result.differential_fingerprint."""
+        result = detector.detect("N[C@@H](C)C(=O)O")
+        assert result.differential_fingerprint is not None
+        assert result.differential_fingerprint.shape == (128,)
+
+    def test_achiral_fingerprint_populated(self, detector):
+        """Achiral molecules should also have fingerprints."""
+        result = detector.detect("NCC(=O)O")
+        assert result.fingerprint is not None
+        assert result.fingerprint.shape == (128,)
+
+    def test_meso_fingerprint_populated(self, detector):
+        """Meso compounds should have fingerprints."""
+        result = detector.detect("O[C@H](C(=O)O)[C@@H](O)C(=O)O")
+        assert result.fingerprint is not None
+
+    def test_enantiomer_diff_fp_anti_correlated(self, detector):
+        """Enantiomers' differential FPs should be anti-correlated."""
+        r_l = detector.detect("N[C@@H](C)C(=O)O")
+        r_d = detector.detect("N[C@H](C)C(=O)O")
+        fp_l = r_l.differential_fingerprint
+        fp_d = r_d.differential_fingerprint
+        assert fp_l is not None and fp_d is not None
+        n1, n2 = np.linalg.norm(fp_l), np.linalg.norm(fp_d)
+        if n1 > 1e-8 and n2 > 1e-8:
+            cos_sim = float(np.dot(fp_l, fp_d) / (n1 * n2))
+            assert cos_sim < 0.5, f"Expected anti-correlation, got cosine {cos_sim:.4f}"

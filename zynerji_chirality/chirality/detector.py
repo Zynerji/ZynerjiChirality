@@ -35,6 +35,10 @@ from zynerji_chirality.core.chiral_ordering import (
     reorder_adjacency,
 )
 from zynerji_chirality.core.spectral_match import build_angular_cost_matrix
+from zynerji_chirality.chirality.fingerprint import (
+    chirality_fingerprint,
+    chirality_differential_fingerprint,
+)
 
 from rdkit import Chem
 from rdkit.Chem import rdmolops
@@ -51,6 +55,8 @@ class ChiralityResult:
     sin_eigenvalues: np.ndarray  # Eigenvalues from sin (left) helix
     spectral_coords: SpectralCoords
     confidence: float            # how far above threshold (score / threshold - 1)
+    fingerprint: np.ndarray | None = None               # 128-dim spectral FP
+    differential_fingerprint: np.ndarray | None = None   # 128-dim chirality-only FP
 
     def __repr__(self) -> str:
         label = "CHIRAL" if self.is_chiral else "ACHIRAL"
@@ -149,6 +155,9 @@ class HelixChiralityDetector:
             spectral = compute_spectral_coords(
                 reorder_adjacency(adj, ordering), self.params,
             )
+            # Compute fingerprints even for meso (achiral) molecules
+            fp = self._safe_fingerprint(smiles, mol)
+            diff_fp = self._safe_differential_fingerprint(smiles, mol)
             return ChiralityResult(
                 smiles=smiles,
                 chirality_score=0.0,
@@ -158,6 +167,8 @@ class HelixChiralityDetector:
                 sin_eigenvalues=spectral.eigenvalues_sin,
                 spectral_coords=spectral,
                 confidence=0.0,
+                fingerprint=fp,
+                differential_fingerprint=diff_fp,
             )
 
         # 2. Build standard adjacency (same for both enantiomers)
@@ -234,6 +245,10 @@ class HelixChiralityDetector:
 
         spectral = spectral_best
 
+        # Compute fingerprints
+        fp = self._safe_fingerprint(smiles, mol)
+        diff_fp = self._safe_differential_fingerprint(smiles, mol)
+
         return ChiralityResult(
             smiles=smiles,
             chirality_score=score,
@@ -243,6 +258,8 @@ class HelixChiralityDetector:
             sin_eigenvalues=spectral.eigenvalues_sin,
             spectral_coords=spectral,
             confidence=max(confidence, 0.0),
+            fingerprint=fp,
+            differential_fingerprint=diff_fp,
         )
 
     def detect_per_center(
@@ -442,6 +459,28 @@ class HelixChiralityDetector:
             return "achiral"
 
         return "R" if result.chirality_sign > 0 else "S"
+
+    @staticmethod
+    def _safe_fingerprint(smiles: str, mol: Chem.Mol) -> np.ndarray | None:
+        """Compute spectral fingerprint, returning None on failure."""
+        try:
+            return chirality_fingerprint(mol)
+        except Exception:
+            try:
+                return chirality_fingerprint(smiles)
+            except Exception:
+                return None
+
+    @staticmethod
+    def _safe_differential_fingerprint(smiles: str, mol: Chem.Mol) -> np.ndarray | None:
+        """Compute differential fingerprint, returning None on failure."""
+        try:
+            return chirality_differential_fingerprint(mol)
+        except Exception:
+            try:
+                return chirality_differential_fingerprint(smiles)
+            except Exception:
+                return None
 
     @staticmethod
     def _is_meso(mol: Chem.Mol) -> bool:

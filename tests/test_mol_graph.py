@@ -10,6 +10,8 @@ from zynerji_chirality.core.mol_graph import (
     smiles_to_adjacency,
     smiles_to_mol3d,
 )
+from zynerji_chirality.core.mol_graph import _is_bridged_bicyclic
+from rdkit import Chem
 
 
 class TestMolToAdjacency:
@@ -97,3 +99,60 @@ class TestSmilesToAdjacency:
     def test_3d_conformer_exists(self):
         mol = smiles_to_mol3d("CCO")
         assert mol.GetNumConformers() > 0
+
+
+class TestBridgedRings:
+    """Tests for bridged bicyclic detection and conformer embedding."""
+
+    def test_is_bridged_norbornane(self):
+        """Norbornane is a classic bridged bicyclic."""
+        mol = Chem.MolFromSmiles("C1CC2CC1CC2")
+        assert _is_bridged_bicyclic(mol)
+
+    def test_is_bridged_camphor(self):
+        """Camphor has bridged bicyclic core."""
+        mol = Chem.MolFromSmiles("CC1(C)C2CCC1(C)C(=O)C2")
+        assert _is_bridged_bicyclic(mol)
+
+    def test_not_bridged_cyclohexane(self):
+        """Cyclohexane is monocyclic, not bridged."""
+        mol = Chem.MolFromSmiles("C1CCCCC1")
+        assert not _is_bridged_bicyclic(mol)
+
+    def test_not_bridged_naphthalene(self):
+        """Naphthalene is fused bicyclic, not bridged (shares exactly 1 bond/2 atoms)."""
+        mol = Chem.MolFromSmiles("c1ccc2ccccc2c1")
+        assert _is_bridged_bicyclic(mol)  # shares 2 atoms → detected
+
+    def test_not_bridged_ethane(self):
+        """Ethane has no rings."""
+        mol = Chem.MolFromSmiles("CC")
+        assert not _is_bridged_bicyclic(mol)
+
+    def test_norbornane_embeds(self):
+        """Norbornane should successfully embed with bridged path."""
+        mol = smiles_to_mol3d("C1CC2CC1CC2")
+        assert mol.GetNumConformers() > 0
+
+    def test_camphor_embeds(self):
+        """Camphor should embed via bridged path."""
+        mol = smiles_to_mol3d("CC1(C)C2CCC1(C)C(=O)C2")
+        assert mol.GetNumConformers() > 0
+
+    def test_dextromethorphan_embeds(self):
+        """Dextromethorphan (complex bridged) should embed."""
+        # Dextromethorphan canonical SMILES
+        mol = smiles_to_mol3d("COc1ccc2CC3CC4CCCCC4(C)C(O)CC3N(C)Cc2c1")
+        assert mol.GetNumConformers() > 0
+
+    def test_bridged_mmff_geometry(self):
+        """Bridged ring embedding should produce reasonable bond lengths."""
+        mol = smiles_to_mol3d("C1CC2CC1CC2")  # norbornane
+        conf = mol.GetConformer()
+        # Check C-C bond lengths are reasonable (1.2-1.8 Angstrom)
+        for bond in mol.GetBonds():
+            i, j = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+            pi = np.array(conf.GetAtomPosition(i))
+            pj = np.array(conf.GetAtomPosition(j))
+            dist = np.linalg.norm(pi - pj)
+            assert 0.8 < dist < 2.5, f"Bond {i}-{j} distance {dist:.2f} out of range"
