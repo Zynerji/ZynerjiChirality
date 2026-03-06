@@ -11,6 +11,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 
+
 def _fp_one(smiles: str) -> tuple[str, object]:
     """Compute fingerprint for one SMILES in a worker process."""
     try:

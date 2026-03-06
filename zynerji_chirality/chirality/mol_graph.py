@@ -1,0 +1,406 @@
+"""RDKit molecule to sparse adjacency matrix conversion.
+
+Converts RDKit Mol objects to weighted scipy sparse matrices suitable
+for dual-helix spectral decomposition.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections import OrderedDict
+
+import numpy as np
+from scipy.sparse import csr_matrix
+
+from rdkit import Chem
+from rdkit.Chem import AllChem, rdmolops
+
+_logger = logging.getLogger(__name__)
+
+# ---------- GPU pipeline + mol3d cache ----------
+# Set via set_cuda_pipeline() at startup for GPU-accelerated 3D embedding.
+_CUDA_PIPELINE = None
+
+# Atom count threshold: molecules with >= this many heavy atoms use GPU first.
+# Below this, CPU ETKDG is faster (~0.1s) than GPU DG (~1.5s for small mols).
+_GPU_ATOM_THRESHOLD = 80
+
+# LRU cache: SMILES -> RDKit Mol with 3D conformer.
+# Eliminates redundant embeddings when the same SMILES is fingerprinted
+# multiple times (e.g., build_feature_vector calls chirality_fingerprint
+# AND detector.detect for the same SMILES).
+_MOL3D_CACHE: OrderedDict[str, Chem.Mol] = OrderedDict()
+_MOL3D_CACHE_MAX = 50_000
+
+
+def set_cuda_pipeline(pipeline, gpu_atom_threshold: int = 80) -> None:
+    """Set a global CUDAConformerPipeline for GPU-accelerated 3D embedding.
+
+    Call once at startup. Molecules with >= gpu_atom_threshold heavy atoms
+    use GPU directly. Smaller molecules try CPU ETKDG first (faster for
+    typical drug molecules), with GPU as fallback when CPU fails.
+
+    Parameters
+    ----------
+    pipeline : CUDAConformerPipeline or None
+        Pass None to disable GPU and revert to CPU-only.
+    gpu_atom_threshold : int
+        Minimum heavy atom count to prefer GPU over CPU ETKDG.
+    """
+    global _CUDA_PIPELINE, _GPU_ATOM_THRESHOLD
+    _CUDA_PIPELINE = pipeline
+    _GPU_ATOM_THRESHOLD = gpu_atom_threshold
+    if pipeline is not None:
+        _logger.info(
+            "GPU pipeline enabled (threshold=%d atoms)", gpu_atom_threshold
+        )
+    else:
+        _logger.info("GPU pipeline disabled, using CPU ETKDG")
+
+
+def clear_mol3d_cache() -> None:
+    """Clear the smiles_to_mol3d() result cache."""
+    _MOL3D_CACHE.clear()
+
+
+def _cache_put(smiles: str, mol: Chem.Mol) -> None:
+    """Add to LRU cache, evicting oldest if full."""
+    if smiles in _MOL3D_CACHE:
+        _MOL3D_CACHE.move_to_end(smiles)
+        return
+    if len(_MOL3D_CACHE) >= _MOL3D_CACHE_MAX:
+        _MOL3D_CACHE.popitem(last=False)
+    _MOL3D_CACHE[smiles] = mol
+
+
+# Bond type to weight mapping
+_BOND_ORDER = {
+    Chem.BondType.SINGLE: 1.0,
+    Chem.BondType.AROMATIC: 1.5,
+    Chem.BondType.DOUBLE: 2.0,
+    Chem.BondType.TRIPLE: 3.0,
+}
+
+
+def mol_to_adjacency(mol: Chem.Mol, weight_mode: str = "bond_order") -> csr_matrix:
+    """Convert RDKit Mol to weighted adjacency matrix.
+
+    Parameters
+    ----------
+    mol : Chem.Mol
+        RDKit molecule object.
+    weight_mode : str
+        "binary"     -- 0/1 connectivity
+        "bond_order" -- 1.0/1.5/2.0/3.0 for single/aromatic/double/triple
+        "distance"   -- 1/d(i,j) using 3D conformer Euclidean distances
+
+    Returns
+    -------
+    csr_matrix
+        Symmetric weighted adjacency matrix (n_atoms x n_atoms).
+    """
+    n = mol.GetNumAtoms()
+    if n == 0:
+        return csr_matrix((0, 0))
+
+    if weight_mode == "binary":
+        adj_np = Chem.GetAdjacencyMatrix(mol).astype(np.float64)
+        return csr_matrix(adj_np)
+
+    if weight_mode == "distance":
+        conf = mol.GetConformer()
+        rows, cols, vals = [], [], []
+        for bond in mol.GetBonds():
+            i, j = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+            pi = np.array(conf.GetAtomPosition(i))
+            pj = np.array(conf.GetAtomPosition(j))
+            d = np.linalg.norm(pi - pj)
+            w = 1.0 / max(d, 1e-6)
+            rows.extend([i, j])
+            cols.extend([j, i])
+            vals.extend([w, w])
+        return csr_matrix((vals, (rows, cols)), shape=(n, n))
+
+    # Default: bond_order
+    rows, cols, vals = [], [], []
+    for bond in mol.GetBonds():
+        i, j = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        w = _BOND_ORDER.get(bond.GetBondType(), 1.0)
+        rows.extend([i, j])
+        cols.extend([j, i])
+        vals.extend([w, w])
+
+    return csr_matrix((vals, (rows, cols)), shape=(n, n))
+
+
+def mol_to_chiral_adjacency(
+    mol: Chem.Mol,
+    chiral_weight: float = 0.5,
+) -> csr_matrix:
+    """Bond-order adjacency with chirality-modulated weights.
+
+    Bonds incident to chiral centers get +/- chiral_weight based on
+    CIP assignment (R=+, S=-). This encodes handedness directly into
+    the graph weights.
+
+    Parameters
+    ----------
+    mol : Chem.Mol
+        RDKit molecule with CIP assignments.
+    chiral_weight : float
+        Magnitude of chirality modulation on incident bond weights.
+
+    Returns
+    -------
+    csr_matrix
+        Chirality-modulated weighted adjacency matrix.
+    """
+    n = mol.GetNumAtoms()
+    if n == 0:
+        return csr_matrix((0, 0))
+
+    # Ensure CIP labels are assigned
+    Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
+
+    # Build chiral center map: atom_idx -> sign (+1 for R, -1 for S)
+    chiral_signs = {}
+    chiral_info = Chem.FindMolChiralCenters(mol, includeUnassigned=True)
+    for atom_idx, label in chiral_info:
+        if label == "R":
+            chiral_signs[atom_idx] = +1.0
+        elif label == "S":
+            chiral_signs[atom_idx] = -1.0
+        # '?' stays absent — no modulation for unassigned
+
+    rows, cols, vals = [], [], []
+    for bond in mol.GetBonds():
+        i, j = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        w = _BOND_ORDER.get(bond.GetBondType(), 1.0)
+
+        # Apply chirality modulation if either endpoint is a chiral center
+        mod = 0.0
+        if i in chiral_signs:
+            mod += chiral_signs[i] * chiral_weight
+        if j in chiral_signs:
+            mod += chiral_signs[j] * chiral_weight
+
+        w_mod = w + mod
+
+        rows.extend([i, j])
+        cols.extend([j, i])
+        vals.extend([w_mod, w_mod])
+
+    return csr_matrix((vals, (rows, cols)), shape=(n, n))
+
+
+def smiles_to_mol3d(smiles: str) -> Chem.Mol:
+    """Parse SMILES and generate 3D conformer.
+
+    Uses GPU (CUDAConformerPipeline) when available, falling back to CPU
+    ETKDG. Results are cached to avoid redundant 3D embeddings.
+
+    Parameters
+    ----------
+    smiles : str
+        SMILES string (may include chirality annotations like @/@@ or /\\).
+
+    Returns
+    -------
+    Chem.Mol
+        RDKit Mol with 3D coordinates embedded.
+
+    Raises
+    ------
+    ValueError
+        If SMILES cannot be parsed or 3D embedding fails.
+    """
+    # Check cache first
+    if smiles in _MOL3D_CACHE:
+        _MOL3D_CACHE.move_to_end(smiles)
+        return _MOL3D_CACHE[smiles]
+
+    # Determine molecule size for GPU vs CPU decision
+    _parsed = Chem.MolFromSmiles(smiles)
+    if _parsed is None:
+        raise ValueError(f"Cannot parse SMILES: {smiles}")
+    n_heavy = _parsed.GetNumHeavyAtoms()
+
+    # Large molecules: GPU first (CPU ETKDG often hangs or is very slow)
+    if _CUDA_PIPELINE is not None and n_heavy >= _GPU_ATOM_THRESHOLD:
+        try:
+            mol = _CUDA_PIPELINE.embed_molecule(smiles)
+            _cache_put(smiles, mol)
+            return mol
+        except Exception as e:
+            _logger.debug("CUDA embed failed for %s, CPU fallback: %s", smiles[:60], e)
+
+    # CPU path: ETKDG (fast for small-to-medium molecules)
+    mol = Chem.AddHs(_parsed)
+
+    # ETKDG for 3D conformer generation
+    params = AllChem.ETKDGv3()
+    params.randomSeed = 42
+    used_random_coords = False
+    status = AllChem.EmbedMolecule(mol, params)
+    if status == -1:
+        # Fallback: try without ETKDG constraints
+        status = AllChem.EmbedMolecule(mol, randomSeed=42)
+        if status == -1:
+            # Fallback 2: useRandomCoords for large/complex molecules
+            params2 = AllChem.ETKDGv3()
+            params2.randomSeed = 42
+            params2.useRandomCoords = True
+            status = AllChem.EmbedMolecule(mol, params2)
+            if status == -1:
+                # Fallback 3: try GPU if available (even below threshold)
+                if _CUDA_PIPELINE is not None:
+                    try:
+                        mol = _CUDA_PIPELINE.embed_molecule(smiles)
+                        _cache_put(smiles, mol)
+                        return mol
+                    except Exception:
+                        pass
+                raise ValueError(f"Cannot embed 3D conformer for: {smiles}")
+            used_random_coords = True
+
+    # Skip expensive MMFF for random-coords fallback — bond-order fingerprints
+    # don't need accurate 3D geometry, just valid conformer for CIP assignment
+    if not used_random_coords:
+        AllChem.MMFFOptimizeMolecule(mol, maxIters=200)
+
+    # Assign stereochemistry from 3D
+    Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
+
+    _cache_put(smiles, mol)
+    return mol
+
+
+def apply_axial_perturbation(
+    adj: csr_matrix,
+    mol: Chem.Mol,
+    axial_centers: list[tuple[int, int, int, str]],
+    direction: float = 1.0,
+    perturbation_weight: float = 0.3,
+) -> csr_matrix:
+    """Modulate edge weights around axial chirality centers.
+
+    For each atropisomeric bond, perturbs the weights of bonds adjacent
+    to the axis based on the dihedral geometry, creating asymmetric
+    spectral signatures for Ra vs Sa atropisomers.
+
+    Parameters
+    ----------
+    adj : csr_matrix
+        Base adjacency matrix.
+    mol : Chem.Mol
+        Molecule with 3D coordinates.
+    axial_centers : list
+        Output from find_axial_centers().
+    direction : float
+        +1 or -1 to apply perturbation in opposite directions.
+    perturbation_weight : float
+        Magnitude of the weight perturbation.
+
+    Returns
+    -------
+    csr_matrix
+        Modified adjacency with axial perturbation applied.
+    """
+    adj_dense = adj.toarray().copy()
+
+    for a_idx, b_idx, bond_idx, label in axial_centers:
+        a_atom = mol.GetAtomWithIdx(a_idx)
+        b_atom = mol.GetAtomWithIdx(b_idx)
+
+        # Get neighbors of each axis atom (excluding the other axis atom)
+        a_neighbors = [nb.GetIdx() for nb in a_atom.GetNeighbors() if nb.GetIdx() != b_idx]
+        b_neighbors = [nb.GetIdx() for nb in b_atom.GetNeighbors() if nb.GetIdx() != a_idx]
+
+        # Apply asymmetric perturbation to bonds around the axis
+        sign = direction
+        for i, nb_idx in enumerate(a_neighbors):
+            mod = sign * perturbation_weight * ((-1) ** i)
+            adj_dense[a_idx, nb_idx] += mod
+            adj_dense[nb_idx, a_idx] += mod
+
+        for i, nb_idx in enumerate(b_neighbors):
+            mod = -sign * perturbation_weight * ((-1) ** i)
+            adj_dense[b_idx, nb_idx] += mod
+            adj_dense[nb_idx, b_idx] += mod
+
+    return csr_matrix(adj_dense)
+
+
+def smiles_to_mol3d_ensemble(
+    smiles: str,
+    n_conformers: int = 10,
+    random_seed: int = 42,
+) -> list[Chem.Mol]:
+    """Parse SMILES and generate multiple 3D conformers.
+
+    Each conformer is MMFF-optimized independently. Returns a list of
+    Mol objects each with a single conformer embedded.
+
+    Parameters
+    ----------
+    smiles : str
+        SMILES string.
+    n_conformers : int
+        Number of conformers to generate.
+    random_seed : int
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    list[Chem.Mol]
+        List of Mol objects, each with one 3D conformer.
+
+    Raises
+    ------
+    ValueError
+        If SMILES cannot be parsed or no conformers generated.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        raise ValueError(f"Cannot parse SMILES: {smiles}")
+
+    mol = Chem.AddHs(mol)
+
+    params = AllChem.ETKDGv3()
+    params.randomSeed = random_seed
+    params.numThreads = 1
+
+    conf_ids = AllChem.EmbedMultipleConfs(mol, numConfs=n_conformers, params=params)
+    if len(conf_ids) == 0:
+        raise ValueError(f"Cannot generate conformers for: {smiles}")
+
+    # Optimize each conformer
+    for cid in conf_ids:
+        AllChem.MMFFOptimizeMolecule(mol, confId=cid, maxIters=200)
+
+    # Split into individual Mol objects (one conformer each)
+    result = []
+    for cid in conf_ids:
+        conf_mol = Chem.RWMol(mol)
+        # Remove all conformers except this one
+        conf_ids_to_remove = [c.GetId() for c in conf_mol.GetConformers() if c.GetId() != cid]
+        for rid in conf_ids_to_remove:
+            conf_mol.RemoveConformer(rid)
+        Chem.AssignStereochemistry(conf_mol, cleanIt=True, force=True)
+        result.append(conf_mol.GetMol())
+
+    return result
+
+
+def smiles_to_adjacency(
+    smiles: str,
+    weight_mode: str = "bond_order",
+) -> tuple[csr_matrix, Chem.Mol]:
+    """Convenience: SMILES string -> adjacency matrix + Mol object.
+
+    Generates 3D conformer via ETKDG for distance mode and
+    CIP assignment.
+    """
+    mol = smiles_to_mol3d(smiles)
+    adj = mol_to_adjacency(mol, weight_mode=weight_mode)
+    return adj, mol

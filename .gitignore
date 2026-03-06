@@ -12,6 +12,12 @@ chembl_work/*.json
 chembl_work/*.jsonl
 chembl_work/*.txt
 
+# COD/ORD pipeline data (large files)
+cod_work/
+ord_work/
+cod_structures_extracted.json
+cod_structures_sample.json
+
 # LaTeX build artifacts
 paper/*.aux
 paper/*.log
