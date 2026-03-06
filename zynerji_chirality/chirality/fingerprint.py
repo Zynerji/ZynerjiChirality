@@ -359,6 +359,103 @@ def chirality_differential_fingerprint(
     return fp
 
 
+def per_center_differential_fingerprint(
+    smiles_or_mol: str | Chem.Mol,
+    params: HelixParams | None = None,
+    nbits: int = 128,
+    chiral_weight: float = 0.5,
+) -> list[np.ndarray]:
+    """Compute per-center differential fingerprints.
+
+    For each chiral center, computes a differential FP where only that
+    center's chirality modulation is active. Avoids cancellation in
+    multi-center molecules (e.g. Threonine, Ethambutol).
+
+    Parameters
+    ----------
+    smiles_or_mol : str or Chem.Mol
+        SMILES string or RDKit Mol object.
+    params : HelixParams, optional
+        Helix parameters.
+    nbits : int
+        Length of each output fingerprint vector.
+    chiral_weight : float
+        Chirality modulation weight.
+
+    Returns
+    -------
+    list[np.ndarray]
+        One fingerprint per chiral center. Empty list if achiral.
+        Each has shape (nbits,).
+    """
+    from zynerji_chirality.core.chiral_ordering import cip_canonical_order_per_center
+
+    if params is None:
+        params = HelixParams()
+
+    # Parse molecule
+    if isinstance(smiles_or_mol, str):
+        mol_2d = Chem.MolFromSmiles(smiles_or_mol)
+        if mol_2d is not None:
+            Chem.AssignStereochemistry(mol_2d, cleanIt=True, force=True)
+            assigned = Chem.FindMolChiralCenters(mol_2d, includeUnassigned=False)
+            unassigned = Chem.FindMolChiralCenters(mol_2d, includeUnassigned=True)
+            if len(unassigned) == 0 or len(assigned) == len(unassigned):
+                mol = mol_2d
+            else:
+                mol = smiles_to_mol3d(smiles_or_mol)
+        else:
+            raise ValueError(f"Cannot parse SMILES: {smiles_or_mol}")
+    else:
+        mol = smiles_or_mol
+
+    # Baseline: standard adjacency with no chirality shift
+    adj_std = mol_to_adjacency(mol, weight_mode="bond_order")
+    ordering_base = cip_canonical_order(mol)
+    adj_std_ordered = reorder_adjacency(adj_std, ordering_base)
+    spectral_std = compute_spectral_coords(adj_std_ordered, params)
+
+    k = params.k
+
+    def pad_evals(evals, length):
+        padded = np.zeros(length)
+        n = min(len(evals), length)
+        padded[:n] = evals[:n]
+        return padded
+
+    std_cos = pad_evals(spectral_std.eigenvalues_cos, k)
+    std_sin = pad_evals(spectral_std.eigenvalues_sin, k)
+
+    # Per-center: for each center, apply only that center's shift
+    fps = []
+    for shift_dir in (+1, -1):
+        per_center = cip_canonical_order_per_center(mol, shift_override=shift_dir)
+        for center_idx, ordering in per_center.items():
+            if ordering == list(range(mol.GetNumAtoms())):
+                continue  # no effect
+
+            # Build chiral adjacency with only this center modulated
+            adj_chiral = mol_to_chiral_adjacency(mol, chiral_weight=chiral_weight)
+            adj_chiral_ordered = reorder_adjacency(adj_chiral, ordering)
+            spectral_chiral = compute_spectral_coords(adj_chiral_ordered, params)
+
+            chi_cos = pad_evals(spectral_chiral.eigenvalues_cos, k)
+            chi_sin = pad_evals(spectral_chiral.eigenvalues_sin, k)
+
+            diff_cos = chi_cos - std_cos
+            diff_sin = chi_sin - std_sin
+            raw = np.concatenate([diff_cos, diff_sin])
+
+            proj = _get_projection_matrix(len(raw), nbits)
+            fp = raw @ proj
+            fps.append(fp)
+
+        if fps:
+            break  # Got results from first shift direction
+
+    return fps
+
+
 def _compute_one_diff_fp(args: tuple) -> np.ndarray | None:
     """Module-level worker for batch_differential_fingerprint."""
     smiles, nbits, mode = args

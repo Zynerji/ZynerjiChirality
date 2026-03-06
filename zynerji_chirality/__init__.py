@@ -1,6 +1,6 @@
 """ZynerjiChirality — Chirality detection via dual-helix spectral graph analysis."""
 
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 
 # Core detection API
 from zynerji_chirality.chirality.detector import (
@@ -14,6 +14,7 @@ from zynerji_chirality.chirality.detector import (
 from zynerji_chirality.chirality.fingerprint import (
     chirality_fingerprint,
     chirality_differential_fingerprint,
+    per_center_differential_fingerprint,
     batch_fingerprint,
     batch_differential_fingerprint,
     fingerprint_similarity,
@@ -88,6 +89,7 @@ __all__ = [
     "EnsembleResult",
     "chirality_fingerprint",
     "chirality_differential_fingerprint",
+    "per_center_differential_fingerprint",
     "batch_fingerprint",
     "batch_differential_fingerprint",
     "fingerprint_similarity",
